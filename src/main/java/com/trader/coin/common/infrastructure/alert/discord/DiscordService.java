@@ -47,17 +47,29 @@ public class DiscordService {
             DiscordUtil discordBot = getDiscordBot(webhookProperties.getUpbit().getUrl());
             String registeredTimeFormat = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").format(LocalDateTime.now());
 
-            discordBot.setUsername("업비트");
-            discordBot.setAvatarUrl("https://raw.githubusercontent.com/angelSuho/MyOwnLittleTrader/main/images/upbit.png?token=GHSAT0AAAAAACPK4EINGNOAPEXYCEUTRNPCZQAHNOA");
+            discordBot.setUsername("업비트 알리미");
+            discordBot.setAvatarUrl("https://raw.githubusercontent.com/angelSuho/MyOwnLittleTrader/main/images/upbit.png");
 
-            DiscordUtil.EmbedObject embedObject = new DiscordUtil.EmbedObject()
-                    .setTitle(title)
-                    .setColor(Color.GREEN)
-                    .addField("Market", marketId, false)
-                    .addField("가격", price, true)
-                    .addField("주문량", volume, true)
-                    .addField("주문", side, true)
-                    .addField("timestamp", registeredTimeFormat, false);
+            DiscordUtil.EmbedObject embedObject;
+            if (volume != null) {
+                embedObject = new DiscordUtil.EmbedObject()
+                        .setTitle(title)
+                        .setColor(Color.GREEN)
+                        .addField("Market", marketId, false)
+                        // 43000 -> 43,000
+                        .addField("가격", String.format("%,d", Long.parseLong(price)), true)
+                        .addField("수량", volume, true)
+                        .addField("주문", side, true)
+                        .addField("timestamp", registeredTimeFormat, false);
+            } else {
+                embedObject = new DiscordUtil.EmbedObject()
+                        .setTitle(title)
+                        .setColor(Color.GREEN)
+                        .addField("Market", marketId, false)
+                        .addField("가격",String.format("%,d", Long.parseLong(price)), true)
+                        .addField("주문", side, true)
+                        .addField("timestamp", registeredTimeFormat, false);
+            }
 
             discordBot.addEmbed(embedObject);
             discordBot.execute();

@@ -28,7 +28,6 @@ public class JwtTokenUtil {
     public String getAuthenticationToken(ConfigProperties configProperties, String queryHash) {
         String accessKey = configProperties.getAccessKey();
         String secretKey = configProperties.getSecretKey();
-        String serverUrl = configProperties.getServerUrl();
 
         Algorithm algorithm = Algorithm.HMAC256(secretKey);
         String jwtToken = JWT.create()
