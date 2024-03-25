@@ -1,4 +1,4 @@
-package com.trader.coin.upbit.domain.dto;
+package com.trader.coin.upbit.presentation;
 
 import com.trader.coin.common.infrastructure.config.exception.BaseException;
 import com.trader.coin.common.infrastructure.config.exception.ErrorCode;
@@ -8,18 +8,17 @@ import lombok.NoArgsConstructor;
 
 @Getter
 @NoArgsConstructor(access = lombok.AccessLevel.PROTECTED)
-public class UpbitOrderRequest {
+public class CoinOrderRequest {
     @NotBlank(message = "주문할 코인 이름을 입력해주세요. ex) KRW-BTC")
     private String market;
     @NotBlank(message = "주문 종류를 입력해주세요. ex) ask 또는 bid")
     private String side;
     private String volume;
-    @NotBlank(message = "주문 가격을 입력해주세요.")
     private String price;
     @NotBlank(message = "주문 타입을 입력해주세요. ex) limit, price, market")
     private String ord_type;
 
-    public UpbitOrderRequest(String market, String side, String volume, String price, String ordType) {
+    public CoinOrderRequest(String market, String side, String volume, String price, String ordType) {
         this.market = market;
         checkSide(side);
         this.side = side;

@@ -32,7 +32,7 @@ public class DiscordService {
                     .addField("Request IP", request.getRemoteAddr(), true)
                     .addField("Request URL", request.getRequestURL() + "   " + request.getMethod(), true)
                     .addField("Error Code", ex.getErrorCode().getStatus().toString(), false)
-                    .addField("Error Message", ex.getErrorCode().getDescription(), true)
+                    .addField("Error Message", ex.getMessage(), true)
                     .addField("timestamp", registeredTimeFormat, false);
 
             discordBot.addEmbed(embedObject);
@@ -44,7 +44,7 @@ public class DiscordService {
 
     public void sendDiscordAlertLog(String title, String marketId, String price, String volume, String side) {
         try {
-            DiscordUtil discordBot = getDiscordBot(webhookProperties.getUpbit().getUrl());
+             DiscordUtil discordBot = getDiscordBot(webhookProperties.getUpbit().getUrl());
             String registeredTimeFormat = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").format(LocalDateTime.now());
 
             discordBot.setUsername("업비트 알리미");
@@ -56,10 +56,8 @@ public class DiscordService {
                         .setTitle(title)
                         .setColor(Color.GREEN)
                         .addField("Market", marketId, false)
-                        // 43000 -> 43,000
-                        .addField("가격", String.format("%,d", Long.parseLong(price)), true)
                         .addField("수량", volume, true)
-                        .addField("주문", side, true)
+                        .addField("주문", getSide(side), true)
                         .addField("timestamp", registeredTimeFormat, false);
             } else {
                 embedObject = new DiscordUtil.EmbedObject()
@@ -67,7 +65,7 @@ public class DiscordService {
                         .setColor(Color.GREEN)
                         .addField("Market", marketId, false)
                         .addField("가격",String.format("%,d", Long.parseLong(price)), true)
-                        .addField("주문", side, true)
+                        .addField("주문", getSide(side), true)
                         .addField("timestamp", registeredTimeFormat, false);
             }
 
@@ -80,5 +78,9 @@ public class DiscordService {
 
     private DiscordUtil getDiscordBot(String url) {
         return new DiscordUtil(url);
+    }
+
+    private String getSide(String side) {
+        return side.equals("ask") ? "매도" : "매수";
     }
 }
