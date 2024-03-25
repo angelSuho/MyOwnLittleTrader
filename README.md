@@ -6,3 +6,5 @@
     - RSI
     - BollingerBand
  
+지원 거래소
+- upbit
