@@ -34,8 +34,6 @@
 ## Supported Exchange
 - upbit
 
-</br></br></br>
-
 ## Disclaimer
 - This project was created for fun. Please do not use it for professional trading decisions.
 - All investments carry risks. Due to market volatility, there can be losses, and you may lose part or all of the invested capital.
