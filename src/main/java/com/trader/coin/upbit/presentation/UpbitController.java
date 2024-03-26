@@ -1,6 +1,9 @@
 package com.trader.coin.upbit.presentation;
 
 import com.trader.coin.common.Tech.service.TechnicalIndicator;
+import com.trader.coin.upbit.presentation.dto.CoinInquiryResponse;
+import com.trader.coin.upbit.presentation.dto.CoinOrderRequest;
+import com.trader.coin.upbit.service.dto.CandleResponse;
 import com.trader.coin.upbit.service.UpbitService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
@@ -28,8 +31,7 @@ public class UpbitController {
     public ResponseEntity<List<CandleResponse>> getCandles(@PathVariable(value = "unit") String unit,
                                                            @NotNull @RequestParam(value = "market") String market,
                                                            @NotNull @RequestParam(value = "count") int count) {
-        System.out.println(Arrays.toString(technicalIndicator.calculateBollingerBand(upbitService.getCandles(unit, market, 200), 20)));
-        return ResponseEntity.status(HttpStatus.OK).body(upbitService.getCandles(unit, market, count));
+        return ResponseEntity.status(HttpStatus.OK).body(upbitService.getCandles(market, unit, count));
     }
 
     @GetMapping("/my-inquiry")
@@ -46,6 +48,12 @@ public class UpbitController {
     @GetMapping("/holding-sell")
     public ResponseEntity<Void> evaluateHoldingsForSell() {
         upbitService.evaluateHoldingsForSell();
+        return ResponseEntity.status(HttpStatus.OK).build();
+    }
+
+    @GetMapping("/calculate-profit")
+    public ResponseEntity<Void> calculateProfit() {
+        upbitService.calculateProfitPercentage();
         return ResponseEntity.status(HttpStatus.OK).build();
     }
 

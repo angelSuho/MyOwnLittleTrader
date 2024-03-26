@@ -10,10 +10,13 @@ import com.trader.coin.common.infrastructure.config.exception.BaseException;
 import com.trader.coin.common.infrastructure.config.exception.ErrorCode;
 import com.trader.coin.crypto.infrastructure.jwt.JwtTokenUtil;
 import com.trader.coin.upbit.domain.CoinEvaluation;
+import com.trader.coin.upbit.domain.ProfitPercentage;
+import com.trader.coin.upbit.infrastructure.ProfitPercentageRepository;
 import com.trader.coin.upbit.infrastructure.config.UpbitProperties;
-import com.trader.coin.upbit.presentation.CandleResponse;
-import com.trader.coin.upbit.presentation.CoinInquiryResponse;
-import com.trader.coin.upbit.presentation.CoinOrderRequest;
+import com.trader.coin.upbit.presentation.dto.CoinInquiryResponse;
+import com.trader.coin.upbit.presentation.dto.CoinOrderRequest;
+import com.trader.coin.upbit.service.dto.CandleResponse;
+import com.trader.coin.upbit.service.dto.TickerResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.http.HttpEntity;
@@ -30,6 +33,8 @@ import org.springframework.web.reactive.function.client.WebClient;
 import java.io.IOException;
 import java.math.BigInteger;
 import java.security.MessageDigest;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.*;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
@@ -38,6 +43,7 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 @Service
 @RequiredArgsConstructor
 public class UpbitService {
+    private final ProfitPercentageRepository profitPercentageRepository;
 
     private final ObjectMapper objectMapper;
     private final UpbitProperties upbitProperties;
@@ -115,10 +121,9 @@ public class UpbitService {
         String unit = "days";
         double bidPercentage = 0.25;
         List<CoinInquiryResponse> inquiries = getAccountInquiry();
-
-        // KRW 제외하고 보유 코인 3개 일 경우 매수 안함
-        if (inquiries.size() >= 3) {
-            log.info("보유 코인이 3개 이상이므로 매수하지 않습니다.");
+        log.warn("{} 보유 코인 매수 조건 평가 시작", getLocalDateTimeNow());
+        if (inquiries.stream().anyMatch(inquiry -> inquiry.getCurrency().equals("KRW") && inquiry.getBalance() <= 50000)) {
+            log.info("KRW 잔고가 50000원 이하이므로 매수하지 않습니다.");
             return;
         }
 
@@ -147,7 +152,7 @@ public class UpbitService {
             double lowerBandNear = lowerBand * 1.05; // 볼린저 밴드 하단의 5% 위
             boolean isBandTrue = candles.get(0).getTradePrice() <= lowerBandNear && candles.get(0).getTradePrice() >= lowerBand;
 
-            if (rsi < 40 && isBandTrue) {
+            if (rsi < 45 && isBandTrue) {
                 evaluations.add(new CoinEvaluation(market, rsi, candles.get(0).getTradePrice(), bollingerBand[1]));
             }
 
@@ -171,7 +176,8 @@ public class UpbitService {
         }
     }
 
-    @Scheduled(cron = "0 0 */1 * * *")
+    // every 30 minutes
+    @Scheduled(cron = "0 0/30 * * * *")
     public void evaluateHoldingsForSell() {
         List<CoinInquiryResponse> inquiries = getAccountInquiry();
         // KRW 제외 보유 코인이 없을 경우 매도하지 않음
@@ -180,7 +186,7 @@ public class UpbitService {
             return;
         }
 
-        log.warn("보유 코인 매도 조건 평가 시작");
+        log.warn("{} 보유 코인 매도 조건 평가 시작", getLocalDateTimeNow());
         int period = 20;
         // unit == null ? minutes : days
         String unit = "days";
@@ -197,11 +203,18 @@ public class UpbitService {
 
             double currentMarketPrice = candles.get(0).getTradePrice();
             double avgBuyPrice = inquiry.getAvgBuyPrice();
-            double lossPercentage = (currentMarketPrice - avgBuyPrice) / avgBuyPrice * 100;
+
+            ProfitPercentage profitPercentage = profitPercentageRepository.findByMarket(market).orElseThrow(() -> new BaseException(ErrorCode.NOT_FOUND, "존재하지 않는 손익률 객체입니다."));
+            double profitAndLossPercentage = (currentMarketPrice - avgBuyPrice) / avgBuyPrice * 100;
+            // 최대 수익률에서 5% 빠졌는지 확인합니다.
+            boolean hasDroppedFromMaxProfit = profitAndLossPercentage < profitPercentage.getProfitAndLossPercentage() - 5;
+            // 현재 손익률이 -3% 이하인지 확인합니다.
+            boolean isLossGreaterThan3Percent = profitAndLossPercentage <= -3;
 
             // 매도 조건
-            if ((rsi > 80 && candles.get(0).getTradePrice() > bollingerBands[0]) || lossPercentage <= -3) {
+            if ((rsi > 80 && candles.get(0).getTradePrice() > bollingerBands[0]) || isLossGreaterThan3Percent || hasDroppedFromMaxProfit) {
                 orderCoin(new CoinOrderRequest(market, "ask", String.valueOf(inquiry.getBalance()), null, "market"));
+                profitPercentageRepository.deleteByMarket(market);
                 discordService.sendDiscordAlertLog("매매 알림",
                         market, String.valueOf(candles.get(0).getTradePrice()),
                         String.valueOf(inquiry.getBalance()), "ask");
@@ -210,7 +223,7 @@ public class UpbitService {
                         rsi,
                         bollingerBands[0],
                         bollingerBands[1],
-                        String.format("%.2f%%", lossPercentage));
+                        String.format("%.2f%%", profitAndLossPercentage));
                 log.info("매도 조건이 충족되어 매도합니다.");
             } else {
                 log.info("{}: , RSI: {}, 볼린저밴드 상단: {}, 볼린저밴드 하단: {}, 손익률: {}%",
@@ -218,18 +231,66 @@ public class UpbitService {
                         rsi,
                         bollingerBands[0],
                         bollingerBands[1],
-                        String.format("%.2f%%", lossPercentage));
+                        String.format("%.2f%%", profitAndLossPercentage));
                 log.info("매도 조건이 충족되지 않아 매도하지 않습니다.");
             }
         }
     }
 
-    private static void delayMethod(int millis) {
-        try {
-            Thread.sleep(millis);
-        } catch (InterruptedException e) {
-            throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "요청 대기 중 오류가 발생했습니다.");
+    @Scheduled(cron = "0 2 * * * *")
+    public void taskAt2Minutes() {
+        calculateProfitPercentage();
+    }
+
+    @Scheduled(cron = "0 12 * * * *")
+    public void taskAt12Minutes() {
+        calculateProfitPercentage();
+    }
+
+    @Scheduled(cron = "0 22 * * * *")
+    public void taskAt22Minutes() {
+        calculateProfitPercentage();
+    }
+
+    @Scheduled(cron = "0 32 * * * *")
+    public void taskAt32Minutes() {
+        calculateProfitPercentage();
+    }
+
+    @Scheduled(cron = "0 42 * * * *")
+    public void taskAt42Minutes() {
+        calculateProfitPercentage();
+    }
+
+    @Scheduled(cron = "0 52 * * * *")
+    public void taskAt52Minutes() {
+        calculateProfitPercentage();
+    }
+
+    public void calculateProfitPercentage() {
+        List<CoinInquiryResponse> inquiries = getAccountInquiry();
+        String now = getLocalDateTimeNow();
+        for (CoinInquiryResponse inquiry : inquiries) {
+            if (inquiry.getCurrency().equals("KRW")) {
+                continue;
+            }
+            String market = inquiry.getUnitCurrency() + "-" + inquiry.getCurrency();
+            double currentMarketPrice = getTicker(market).getTradePrice();
+            double avgBuyPrice = inquiry.getAvgBuyPrice();
+            double profitAndLossPercentage = (currentMarketPrice - avgBuyPrice) / avgBuyPrice * 100;
+            profitPercentageRepository.findByMarket(market)
+                    .ifPresentOrElse(
+                            profitPercentage -> {
+                                if (profitAndLossPercentage < profitPercentage.getProfitAndLossPercentage()) {
+                                    return;
+                                }
+                                profitPercentage.updateProfitPercentage(profitAndLossPercentage);
+                                profitPercentageRepository.save(profitPercentage);
+                            },
+                            () -> profitPercentageRepository.save(new ProfitPercentage(market, profitAndLossPercentage))
+                    );
         }
+        log.info("현재 {} 손익률 계산 완료", now);
     }
 
     public void orderCoin(CoinOrderRequest coinOrderRequest) {
@@ -274,6 +335,39 @@ public class UpbitService {
         discordService.sendDiscordAlertLog("매매 알림",
                 coinOrderRequest.getMarket(), coinOrderRequest.getPrice(),
                 coinOrderRequest.getVolume(), coinOrderRequest.getSide());
+    }
+
+    private TickerResponse getTicker(String market) {
+        WebClient client = WebClient.create(upbitProperties.getServerUrl());
+        String responseBody = client.get()
+                .uri(uriBuilder -> uriBuilder
+                        .path("/v1/ticker")
+                        .queryParam("markets", market)
+                        .build())
+                .retrieve()
+                .bodyToMono(String.class)
+                .block();
+
+        List<TickerResponse> ticker;
+        try {
+            ticker = objectMapper.readValue(responseBody, new TypeReference<>() {});
+        } catch (JsonProcessingException e) {
+            throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "응답 데이터 변환에 실패했습니다.");
+        }
+
+        return ticker.get(0);
+    }
+
+    private static void delayMethod(int millis) {
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException e) {
+            throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "요청 대기 중 오류가 발생했습니다.");
+        }
+    }
+
+    private String getLocalDateTimeNow() {
+        return DateTimeFormatter.ofPattern("yyyy-MM-dd HH시 mm분 ss초").format(LocalDateTime.now());
     }
 
     private Map<String, String> getOrderParams(CoinOrderRequest coinOrderRequest) {

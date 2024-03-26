@@ -1,6 +1,6 @@
 package com.trader.coin.common.Tech.service;
 
-import com.trader.coin.upbit.presentation.CandleResponse;
+import com.trader.coin.upbit.service.dto.CandleResponse;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -18,14 +18,14 @@ public class TechnicalIndicator {
         return sum / period;
     }
 
-    public double calculateEMA(List<CandleResponse> candles, int period) {
-        List<CandleResponse> candlesSortAscendingOrder = candles.stream().sorted(Comparator.comparing(CandleResponse::getTimestamp)).toList();
+    public double calculateEMA(List<CandleResponse> values, int period) {
+        double a = 2.0 / (period + 1);
+        double ema = values.get(0).getTradePrice(); // starting with the first value
 
-        double multiplier = 2.0 / (1 + period);
-        double ema = calculateSMA(candles, period);
-        for (int i = period; i < candles.size(); i++) {
-            ema = (candles.get(i).getTradePrice() - ema) * multiplier + ema;
+        for (int i = 1; i < values.size(); i++) {
+            ema = ((values.get(i).getTradePrice() - ema) * a) + ema;
         }
+
         return ema;
     }
 
@@ -87,8 +87,13 @@ public class TechnicalIndicator {
         return 100 - (100 / (1 + rs));
     }
 
-    public double calculateMACD(List<CandleResponse> candles, int shortPeriod, int longPeriod) {
-        return calculateSMA(candles, shortPeriod) - calculateSMA(candles, longPeriod);
+    public double[] calculateMACD(List<CandleResponse> candles, int shortPeriod, int longPeriod, int signalPeriod) {
+        double shortEMA = calculateEMA(candles, shortPeriod);
+        double longEMA = calculateEMA(candles, longPeriod);
+        double macd = shortEMA - longEMA;
+        double signal = calculateEMA(candles, signalPeriod);
+        double histogram = macd - signal;
+        return new double[]{macd, signal, histogram};
     }
 
     public long[] calculateBollingerBand(List<CandleResponse> candles, int period) {

@@ -1,4 +1,4 @@
-package com.trader.coin.upbit.presentation;
+package com.trader.coin.upbit.presentation.dto;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.AccessLevel;

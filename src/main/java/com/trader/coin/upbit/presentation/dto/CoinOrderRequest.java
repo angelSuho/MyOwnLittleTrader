@@ -1,4 +1,4 @@
-package com.trader.coin.upbit.presentation;
+package com.trader.coin.upbit.presentation.dto;
 
 import com.trader.coin.common.infrastructure.config.exception.BaseException;
 import com.trader.coin.common.infrastructure.config.exception.ErrorCode;
