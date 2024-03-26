@@ -49,8 +49,6 @@ public class UpbitController {
         return ResponseEntity.status(HttpStatus.OK).build();
     }
 
-    @GetMapping()
-
     @PostMapping("/order")
     public ResponseEntity<Void> orderCoin(@Valid @RequestBody CoinOrderRequest coinOrderRequest) {
         upbitService.orderCoin(coinOrderRequest);
