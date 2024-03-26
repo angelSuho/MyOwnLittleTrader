@@ -3,6 +3,8 @@ package com.trader.coin.common.Tech.service;
 import com.trader.coin.upbit.presentation.CandleResponse;
 import org.springframework.stereotype.Component;
 
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 
 @Component
@@ -16,6 +18,17 @@ public class TechnicalIndicator {
         return sum / period;
     }
 
+    public double calculateEMA(List<CandleResponse> candles, int period) {
+        List<CandleResponse> candlesSortAscendingOrder = candles.stream().sorted(Comparator.comparing(CandleResponse::getTimestamp)).toList();
+
+        double multiplier = 2.0 / (1 + period);
+        double ema = calculateSMA(candles, period);
+        for (int i = period; i < candles.size(); i++) {
+            ema = (candles.get(i).getTradePrice() - ema) * multiplier + ema;
+        }
+        return ema;
+    }
+
     public double calculateStandardDeviation(List<CandleResponse> candles, double sma, int period) {
         double variance = 0.0;
         for (int i = 0; i < period; i++) {
@@ -24,31 +37,65 @@ public class TechnicalIndicator {
         return Math.sqrt(variance / period);
     }
 
-    public double calculateRSI(List<CandleResponse> candles, int period) {
-        double avgGain = 0;
-        double avgLoss = 0;
-        for (int i = 1; i < period; i++) {
-            double delta = candles.get(i).getTradePrice() - candles.get(i - 1).getTradePrice();
-            if (delta > 0) {
-                avgGain += delta;
+    public double calculateUpbitRSI(List<CandleResponse> candles, int period) {
+        candles = candles.stream()
+                .sorted(Comparator.comparing(CandleResponse::getTimestamp))
+                .toList();
+
+        double zero = 0;
+        List<Double> upList = new ArrayList<>();
+        List<Double> downList = new ArrayList<>();
+        for (int i = 0; i < candles.size() - 1; i++) {
+            double gapByTradePrice = candles.get(i + 1).getTradePrice() - candles.get(i).getTradePrice();
+            if (gapByTradePrice > 0) {
+                upList.add(gapByTradePrice);
+                downList.add(zero);
+            } else if (gapByTradePrice < 0) {
+                downList.add(gapByTradePrice * -1);
+                upList.add(zero);
             } else {
-                avgLoss -= delta;
+                upList.add(zero);
+                downList.add(zero);
             }
         }
-        avgGain /= period;
-        avgLoss /= period;
-        return 100 - (100 / (1 + avgGain / avgLoss));
+
+        double a = (double) 1 / (1 + (period - 1));
+        double upEma = 0;
+        if (!upList.isEmpty()) {
+            upEma = upList.get(0);
+            if (upList.size() > 1) {
+                for (int i = 1 ; i < upList.size(); i++) {
+                    upEma = (upList.get(i) * a) + (upEma * (1 - a));
+                }
+            }
+        }
+
+        double downEma = 0;
+        if (!downList.isEmpty()) {
+            downEma = downList.get(0);
+            if (downList.size() > 1) {
+                for (int i = 1; i < downList.size(); i++) {
+                    downEma = (downList.get(i) * a) + (downEma * (1 - a));
+                }
+            }
+        }
+
+        double au = upEma;
+        double ad = downEma;
+        double rs = au / ad;
+
+        return 100 - (100 / (1 + rs));
     }
 
     public double calculateMACD(List<CandleResponse> candles, int shortPeriod, int longPeriod) {
         return calculateSMA(candles, shortPeriod) - calculateSMA(candles, longPeriod);
     }
 
-    public double[] calculateBollingerBand(List<CandleResponse> candles, int period) {
+    public long[] calculateBollingerBand(List<CandleResponse> candles, int period) {
         double sma = calculateSMA(candles, period);
         double standardDeviation = calculateStandardDeviation(candles, sma, period);
         double upperBand = sma + 2 * standardDeviation;
         double lowerBand = sma - 2 * standardDeviation;
-        return new double[]{upperBand, lowerBand};
+        return new long[]{(long)upperBand, (long)lowerBand};
     }
 }

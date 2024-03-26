@@ -15,6 +15,7 @@ import com.trader.coin.upbit.presentation.CandleResponse;
 import com.trader.coin.upbit.presentation.CoinInquiryResponse;
 import com.trader.coin.upbit.presentation.CoinOrderRequest;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.http.HttpEntity;
 import org.apache.http.HttpResponse;
 import org.apache.http.client.HttpClient;
@@ -33,6 +34,7 @@ import java.util.*;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class UpbitService {
@@ -61,11 +63,13 @@ public class UpbitService {
         return responseList.stream().map(map -> map.get("market")).toList();
     }
 
-    public List<CandleResponse> getCandles(int unit, String market, int count) {
+    public List<CandleResponse> getCandles(String unit, String market, int count) {
         WebClient client = WebClient.create(upbitProperties.getServerUrl());
+        String path = Objects.equals(unit, "days") ? "/days" : "/minutes/" + unit;
+
         String responseBody = client.get()
                 .uri(uriBuilder -> uriBuilder
-                        .path("/v1/candles/minutes/" + unit)
+                        .path("/v1/candles" + path)
                         .queryParam("market", market)
                         .queryParam("count", count)
                         .build())
@@ -107,13 +111,15 @@ public class UpbitService {
 
     @Scheduled(cron = "0 0 */4 * * *")
     public void waitAndSeeOrderCoin() {
-        int unit = 240;
+        // unit == null ? days : minutes
+        String unit = "days";
         double bidPercentage = 0.25;
         List<CoinInquiryResponse> inquiries = getAccountInquiry();
 
         // KRW 제외하고 보유 코인 3개 일 경우 매수 안함
         if (inquiries.size() >= 3) {
-            throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "보유 코인이 3개 이상일 경우 매수하지 않습니다.");
+            log.info("보유 코인이 3개 이상이므로 매수하지 않습니다.");
+            return;
         }
 
         List<String> markets = findMarkets();
@@ -130,17 +136,27 @@ public class UpbitService {
                 continue;
             }
 
-            List<CandleResponse> candles = getCandles(unit, market, 20);
-            double rsi = technicalIndicator.calculateRSI(candles, 14);
-            double[] bollingerBand = technicalIndicator.calculateBollingerBand(candles, 20);
+            int period = 20;
+            List<CandleResponse> candles = getCandles(unit, market, 200);
+            double rsi = technicalIndicator.calculateUpbitRSI(candles, 14);
+            long[] bollingerBand = technicalIndicator.calculateBollingerBand(candles, period);
             
             // 매수 조건
-            if (rsi < 30 || candles.get(0).getTradePrice() < bollingerBand[1]) {
+            // 볼린저 밴드 하단 범위 설정. 하단 돌파부터 근접
+            double lowerBand = bollingerBand[1];
+            double lowerBandNear = lowerBand * 1.05; // 볼린저 밴드 하단의 5% 위
+            boolean isBandTrue = candles.get(0).getTradePrice() <= lowerBandNear && candles.get(0).getTradePrice() >= lowerBand;
+
+            if (rsi < 40 && isBandTrue) {
                 evaluations.add(new CoinEvaluation(market, rsi, candles.get(0).getTradePrice(), bollingerBand[1]));
             }
 
             // 요청 제한을 대비하여 300ms 대기
             delayMethod(150);
+        }
+
+        if (evaluations.isEmpty()) {
+            throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "매수할 코인이 없습니다.");
         }
 
         Collections.sort(evaluations);
@@ -157,23 +173,53 @@ public class UpbitService {
 
     @Scheduled(cron = "0 0 */1 * * *")
     public void evaluateHoldingsForSell() {
-        int period = 20;
-        int unit = 240;
-
         List<CoinInquiryResponse> inquiries = getAccountInquiry();
+        // KRW 제외 보유 코인이 없을 경우 매도하지 않음
+        if (inquiries.size() <= 1) {
+            log.info("보유 코인이 없어 매도하지 않습니다.");
+            return;
+        }
+
+        log.warn("보유 코인 매도 조건 평가 시작");
+        int period = 20;
+        // unit == null ? minutes : days
+        String unit = "days";
+
         for (CoinInquiryResponse inquiry : inquiries) {
-            List<CandleResponse> candles = getCandles(unit, inquiry.getCurrency(), period);
-            double rsi = technicalIndicator.calculateRSI(candles, 14);
-            double[] bollingerBands = technicalIndicator.calculateBollingerBand(candles, period);
+            if (inquiry.getCurrency().equals("KRW")) {
+                continue;
+            }
+            String market = inquiry.getUnitCurrency() + "-" + inquiry.getCurrency();
+
+            List<CandleResponse> candles = getCandles(unit, market, 200);
+            double rsi = technicalIndicator.calculateUpbitRSI(candles, 14);
+            long[] bollingerBands = technicalIndicator.calculateBollingerBand(candles, period);
 
             double currentMarketPrice = candles.get(0).getTradePrice();
             double avgBuyPrice = inquiry.getAvgBuyPrice();
             double lossPercentage = (currentMarketPrice - avgBuyPrice) / avgBuyPrice * 100;
 
             // 매도 조건
-            if (rsi > 70 || candles.get(0).getTradePrice() > bollingerBands[0] || lossPercentage <= -5) {
-                String market = inquiry.getUnitCurrency() + "-" + inquiry.getCurrency();
+            if ((rsi > 80 && candles.get(0).getTradePrice() > bollingerBands[0]) || lossPercentage <= -3) {
                 orderCoin(new CoinOrderRequest(market, "ask", String.valueOf(inquiry.getBalance()), null, "market"));
+                discordService.sendDiscordAlertLog("매매 알림",
+                        market, String.valueOf(candles.get(0).getTradePrice()),
+                        String.valueOf(inquiry.getBalance()), "ask");
+                log.info("{}: , RSI: {}, 볼린저밴드 상단: {}, 볼린저밴드 하단: {}, 손익률: {}%",
+                        market,
+                        rsi,
+                        bollingerBands[0],
+                        bollingerBands[1],
+                        String.format("%.2f%%", lossPercentage));
+                log.info("매도 조건이 충족되어 매도합니다.");
+            } else {
+                log.info("{}: , RSI: {}, 볼린저밴드 상단: {}, 볼린저밴드 하단: {}, 손익률: {}%",
+                        market,
+                        rsi,
+                        bollingerBands[0],
+                        bollingerBands[1],
+                        String.format("%.2f%%", lossPercentage));
+                log.info("매도 조건이 충족되지 않아 매도하지 않습니다.");
             }
         }
     }
