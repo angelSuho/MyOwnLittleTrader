@@ -173,20 +173,27 @@ public class UpbitService {
             log.error("매수할 코인이 없습니다.");
             return;
         }
+        // 조건 부합 코인 출력
+        evaluations.forEach(evaluation -> log.info("market: {}, RSI: {}, 가격: {}, 볼린저밴드 하단: {}", evaluation.getMarket(), evaluation.getRsi(), evaluation.getTradePrice(), evaluation.getLowerBollingerBand()));
 
-        Collections.sort(evaluations);
-        int inquirySize = inquiries.size() - 1;
-        List<CoinEvaluation> topCoins = evaluations.stream()
-                .limit(3)
+        Random random = new Random();
+        List<Integer> randomIndexes = random.ints(0, evaluations.size())
+                .distinct()
+                .limit(Math.min(3, evaluations.size()))
+                .boxed()
                 .toList();
 
-        topCoins.forEach(coin -> log.info("market: {}, RSI: {}, 가격: {}, 볼린저밴드 하단: {}", coin.getMarket(), coin.getRsi(), coin.getTradePrice(), coin.getLowerBollingerBand()));
+        // 랜덤 인덱스에 해당하는 CoinEvaluation 객체를 추출
+        List<CoinEvaluation> randomPicks = randomIndexes.stream()
+                .map(evaluations::get)
+                .toList();
+
         if (inquiries.stream().anyMatch(inquiry -> inquiry.getCurrency().equals("KRW") && inquiry.getBalance() <= 5_000)) {
             log.error("KRW 잔고가 5000원 이하이므로 매수하지 않습니다.");
             return;
         }
 
-        for (CoinEvaluation coin : topCoins) {
+        for (CoinEvaluation coin : randomPicks) {
             String bidPrice = String.valueOf((long) (krwBalance * bidPercentage));
             orderCoin(new CoinOrderRequest(coin.getMarket(), "bid", null, bidPrice, "price"));
             log.info("market: {}, 가격: {} 매수", coin.getMarket(), bidPrice);

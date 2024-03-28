@@ -3,7 +3,7 @@ package com.trader.coin.upbit.domain;
 import lombok.Getter;
 
 @Getter
-public class CoinEvaluation implements Comparable<CoinEvaluation> {
+public class CoinEvaluation {
     private final String market;
     private final double rsi;
     private final double tradePrice;
@@ -14,10 +14,5 @@ public class CoinEvaluation implements Comparable<CoinEvaluation> {
         this.rsi = rsi;
         this.tradePrice = tradePrice;
         this.lowerBollingerBand = lowerBollingerBand;
-    }
-
-    @Override
-    public int compareTo(CoinEvaluation o) {
-        return 0;
     }
 }
