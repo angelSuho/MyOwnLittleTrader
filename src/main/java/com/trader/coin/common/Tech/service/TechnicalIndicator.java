@@ -1,5 +1,8 @@
 package com.trader.coin.common.Tech.service;
 
+import com.trader.coin.common.domain.MATrendDirection;
+import com.trader.coin.common.infrastructure.config.exception.BaseException;
+import com.trader.coin.common.infrastructure.config.exception.ErrorCode;
 import com.trader.coin.upbit.service.dto.CandleResponse;
 import org.springframework.stereotype.Component;
 
@@ -9,6 +12,47 @@ import java.util.List;
 
 @Component
 public class TechnicalIndicator {
+    public List<Double> calculateSMAList(List<CandleResponse> candles, int period) {
+        List<Double> movingAverages = new ArrayList<>();
+        for (int i = period - 1; i < candles.size(); i++) {
+            double sum = 0;
+            for (int j = i - (period - 1); j <= i; j++) {
+                sum += candles.get(j).getTradePrice();
+            }
+            movingAverages.add(sum / period);
+        }
+        return movingAverages;
+    }
+
+    public boolean isTrendingUp(List<Double> maValues, int period) {
+        for (int i = 0; i < period; i++) {
+            if (maValues.get(i) <= maValues.get(i + 1)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    public MATrendDirection isGoldenCross(List<CandleResponse> candles) {
+        List<Double> MA15 = calculateSMAList(candles, 15);
+        List<Double> MA50 = calculateSMAList(candles, 50);
+        List<Double> bandMiddleLineList = calculateBollingerBandMiddleLineList(candles, 20);
+
+        if (MA15.size() < 2 || MA50.size() < 2) {
+            throw new BaseException(ErrorCode.BAD_REQUEST, "ShortMA and LongMA must have at least 2 elements");
+        }
+
+        boolean hasCrossed = MA15.get(0) > MA50.get(0) && MA15.get(1) <= MA50.get(1);
+        boolean is15maTrendingUp = isTrendingUp(MA15, 4);
+        boolean isMiddleLineTrendingUp = isTrendingUp(bandMiddleLineList, 4);
+        boolean is15maCrossedMiddleLine = MA15.get(0) > bandMiddleLineList.get(0) && MA15.get(1) <= bandMiddleLineList.get(1);
+
+        if (hasCrossed && is15maTrendingUp || is15maCrossedMiddleLine && isMiddleLineTrendingUp) {
+            return MATrendDirection.GOLDEN_CROSS;
+        } else {
+            return MATrendDirection.FLAT;
+        }
+    }
 
     public double calculateSMA(List<CandleResponse> candles, int period) {
         double sum = 0;
@@ -102,5 +146,15 @@ public class TechnicalIndicator {
         double upperBand = sma + 2 * standardDeviation;
         double lowerBand = sma - 2 * standardDeviation;
         return new long[]{(long)upperBand, (long)lowerBand, (long)sma};
+    }
+
+    public List<Double> calculateBollingerBandMiddleLineList(List<CandleResponse> candles, int period) {
+        List<Double> middleLines = new ArrayList<>();
+        for (int i = 0; i <= candles.size() - period; i++) {
+            List<CandleResponse> subList = candles.subList(i, i + period);
+            double sma = calculateSMA(subList, period); // 이미 선언된 메소드 사용
+            middleLines.add(sma); // 계산된 SMA 값을 반올림하여 long 타입으로 변환 후 추가
+        }
+        return middleLines;
     }
 }

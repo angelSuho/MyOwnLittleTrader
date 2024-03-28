@@ -5,6 +5,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.gson.Gson;
 import com.trader.coin.common.Tech.service.TechnicalIndicator;
+import com.trader.coin.common.domain.MATrendDirection;
 import com.trader.coin.common.infrastructure.alert.discord.DiscordService;
 import com.trader.coin.common.infrastructure.config.exception.BaseException;
 import com.trader.coin.common.infrastructure.config.exception.ErrorCode;
@@ -37,7 +38,9 @@ import java.security.MessageDigest;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
+import java.util.stream.Collectors;
 
+import static com.trader.coin.common.domain.MATrendDirection.*;
 import static java.nio.charset.StandardCharsets.UTF_8;
 
 @Slf4j
@@ -157,12 +160,12 @@ public class UpbitService {
             double lowerBand = bollingerBand[1];
             double lowerBandNear = lowerBand * 1.05; // 볼린저 밴드 하단의 5% 위
             boolean isBandTrue = candles.get(0).getTradePrice() <= lowerBandNear && candles.get(0).getTradePrice() >= lowerBand;
+            MATrendDirection goldenCross = technicalIndicator.isGoldenCross(candles);
 
-            if (rsi < 40 && isBandTrue && !COIN_NOT_BUY.contains(market)) {
+            if (rsi < 40 && isBandTrue && !COIN_NOT_BUY.contains(market) || goldenCross == GOLDEN_CROSS) {
                 evaluations.add(new CoinEvaluation(market, rsi, candles.get(0).getTradePrice(), bollingerBand[1]));
             }
 
-            // 요청 제한을 대비하여 300ms 대기
             delayMethod(150);
         }
 
@@ -174,7 +177,7 @@ public class UpbitService {
         Collections.sort(evaluations);
         int inquirySize = inquiries.size() - 1;
         List<CoinEvaluation> topCoins = evaluations.stream()
-                .limit(3-inquirySize)
+                .limit(3)
                 .toList();
 
         topCoins.forEach(coin -> log.info("market: {}, RSI: {}, 가격: {}, 볼린저밴드 하단: {}", coin.getMarket(), coin.getRsi(), coin.getTradePrice(), coin.getLowerBollingerBand()));
@@ -188,6 +191,8 @@ public class UpbitService {
             orderCoin(new CoinOrderRequest(coin.getMarket(), "bid", null, bidPrice, "price"));
             log.info("market: {}, 가격: {} 매수", coin.getMarket(), bidPrice);
         }
+
+        arrangeProfit(inquiries);
     }
 
     @Transactional
@@ -227,7 +232,7 @@ public class UpbitService {
             boolean isLossGreaterThan3Percent = profitAndLossPercentage <= -3;
 
             // 매도 조건
-            if ((rsi > 80 && candles.get(0).getTradePrice() > bollingerBands[0]) || isLossGreaterThan3Percent || hasDroppedFromMaxProfit) {
+            if ((rsi > 75 && candles.get(0).getTradePrice() > bollingerBands[0]) || isLossGreaterThan3Percent || hasDroppedFromMaxProfit) {
                 orderCoin(new CoinOrderRequest(market, "ask", String.valueOf(inquiry.getBalance()), null, "market"));
                 profitPercentageRepository.deleteByMarket(market);
                 discordService.sendDiscordAlertLog(market, String.valueOf(candles.get(0).getTradePrice()),
@@ -278,23 +283,6 @@ public class UpbitService {
                     );
         }
         log.info("현재 {} 손익률 계산 완료", now);
-    }
-
-    @Transactional
-    private List<ProfitPercentage> arrangeProfit(List<CoinInquiryResponse> inquiries) {
-        List<ProfitPercentage> percentages = profitPercentageRepository.findAll();
-        List<String> markets = inquiries.stream()
-                .filter(inquiry -> !inquiry.getCurrency().equals("KRW"))
-                .map(inquiry -> inquiry.getUnitCurrency() + "-" + inquiry.getCurrency())
-                .toList();
-        List<ProfitPercentage> toDelete = percentages.stream()
-                .filter(profitPercentage -> !markets.contains(profitPercentage.getMarket()))
-                .toList();
-        toDelete.forEach(profitPercentage -> {
-            profitPercentageRepository.delete(profitPercentage);
-            percentages.remove(profitPercentage);
-        });
-        return percentages;
     }
 
     public void orderCoin(CoinOrderRequest coinOrderRequest) {
@@ -349,6 +337,27 @@ public class UpbitService {
         }
     }
 
+    @Transactional
+    private List<ProfitPercentage> arrangeProfit(List<CoinInquiryResponse> inquiries) {
+        List<ProfitPercentage> percentages = profitPercentageRepository.findAll();
+        List<String> markets = inquiries.stream()
+                .filter(inquiry -> !inquiry.getCurrency().equals("KRW"))
+                .map(inquiry -> inquiry.getUnitCurrency() + "-" + inquiry.getCurrency())
+                .toList();
+
+        // 삭제할 ProfitPercentage 객체를 찾습니다.
+        List<ProfitPercentage> toDelete = percentages.stream()
+                .filter(profitPercentage -> !markets.contains(profitPercentage.getMarket()))
+                .toList();
+
+        // 삭제할 ProfitPercentage 객체를 삭제합니다.
+        toDelete.forEach(profitPercentageRepository::delete);
+
+        // 삭제 후 남아 있는 ProfitPercentage 객체를 반환합니다.
+        percentages.removeAll(toDelete);
+        return percentages;
+    }
+
     private TickerResponse getTicker(String market) {
         WebClient client = WebClient.create(upbitProperties.getServerUrl());
         String responseBody = client.get()
@@ -371,7 +380,7 @@ public class UpbitService {
     }
 
     private String getLocalDateTimeNow() {
-        return DateTimeFormatter.ofPattern("yyyy-MM-dd HH시 mm분 ss초").format(LocalDateTime.now());
+        return DateTimeFormatter.ofPattern("yyyy년 MM월 dd일 HH시 mm분 ss초").format(LocalDateTime.now());
     }
 
     private Map<String, String> getOrderParams(CoinOrderRequest coinOrderRequest) {

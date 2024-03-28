@@ -60,7 +60,7 @@ public class DiscordService {
                 embedObject = new DiscordUtil.EmbedObject()
                         .setTitle(getSide(side) + " " + marketId)
                         .setColor(getColor(side))
-                        .addField("가격",String.format("%,d", Long.parseLong(price)), true);
+                        .addField("가격",String.format("%,d", Long.parseLong(price)) + " 원", true);
             }
 
             discordBot.addEmbed(embedObject);
