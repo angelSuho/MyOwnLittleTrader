@@ -13,6 +13,8 @@ public class SchedulerService {
     @Scheduled(cron = "0 2 * * * *")
     public void taskAt2Minutes() {
         upbitService.calculateProfitPercentage();
+        // 02분 매수 주문
+        upbitService.waitAndSeeOrderCoin();
     }
 
     @Scheduled(cron = "0 12 * * * *")
@@ -28,6 +30,8 @@ public class SchedulerService {
     @Scheduled(cron = "0 32 * * * *")
     public void taskAt32Minutes() {
         upbitService.calculateProfitPercentage();
+        // 32분 매수 주문
+        upbitService.waitAndSeeOrderCoin();
     }
 
     @Scheduled(cron = "0 42 * * * *")
@@ -43,10 +47,5 @@ public class SchedulerService {
     @Scheduled(cron = "0 0/30 * * * *")
     public void 매도조건확인후매도() {
         upbitService.evaluateHoldingsForSell();
-    }
-
-    @Scheduled(cron = "0 0 */1 * * *")
-    public void 매수조건확인후매수() {
-        upbitService.waitAndSeeOrderCoin();
     }
 }
