@@ -6,6 +6,8 @@
 - 사용 알고리즘
     - RSI
     - Bollinger Bands
+    - SMA
+    - Golden Cross
 - 사용자는 봇을 사용하기 전에 충분한 테스트를 거쳐야 합니다. 또한, 사용자는 자신의 투자 전략과 리스크 관리 계획에 따라 봇의 설정을 조정해야 합니다.
 - 봇의 성능은 과거 성과를 보장하지 않습니다. 시장 조건의 변화에 따라 결과가 달라질 수 있으므로, 사용자는 정기적으로 전략을 검토하고 필요한 조정을 해야 합니다.
  
@@ -28,6 +30,8 @@
 - Algorithms used:
     - RSI
     - Bollinger Bands
+    - SMA
+    - Golden Cross
 - Users must undergo sufficient testing before using the bots. In addition, users must adjust their bot settings according to their investment strategy and risk management plan.
 - The performance of bots does not guarantee past performance; results may vary depending on changes in market conditions, so users should review their strategies regularly and make the necessary adjustments.
  
