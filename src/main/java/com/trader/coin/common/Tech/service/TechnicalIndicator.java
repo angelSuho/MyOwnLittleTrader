@@ -131,15 +131,6 @@ public class TechnicalIndicator {
         return 100 - (100 / (1 + rs));
     }
 
-    public double[] calculateMACD(List<CandleResponse> candles, int shortPeriod, int longPeriod, int signalPeriod) {
-        double shortEMA = calculateEMA(candles, shortPeriod);
-        double longEMA = calculateEMA(candles, longPeriod);
-        double macd = shortEMA - longEMA;
-        double signal = calculateEMA(candles, signalPeriod);
-        double histogram = macd - signal;
-        return new double[]{macd, signal, histogram};
-    }
-
     public long[] calculateBollingerBand(List<CandleResponse> candles, int period) {
         double sma = calculateSMA(candles, period);
         double standardDeviation = calculateStandardDeviation(candles, sma, period);
