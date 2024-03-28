@@ -42,7 +42,7 @@ public class DiscordService {
         }
     }
 
-    public void sendDiscordAlertLog(String title, String marketId, String price, String volume, String side) {
+    public void sendDiscordAlertLog(String marketId, String price, String volume, String side) {
         try {
              DiscordUtil discordBot = getDiscordBot(webhookProperties.getUpbit().getUrl());
             String registeredTimeFormat = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").format(LocalDateTime.now());
@@ -53,20 +53,14 @@ public class DiscordService {
             DiscordUtil.EmbedObject embedObject;
             if (volume != null) {
                 embedObject = new DiscordUtil.EmbedObject()
-                        .setTitle(title)
-                        .setColor(Color.GREEN)
-                        .addField("Market", marketId, false)
-                        .addField("수량", volume, true)
-                        .addField("주문", getSide(side), true)
-                        .addField("timestamp", registeredTimeFormat, false);
+                        .setTitle(getSide(side) + " " + marketId)
+                        .setColor(getColor(side))
+                        .addField("수량", volume, true);
             } else {
                 embedObject = new DiscordUtil.EmbedObject()
-                        .setTitle(title)
-                        .setColor(Color.GREEN)
-                        .addField("Market", marketId, false)
-                        .addField("가격",String.format("%,d", Long.parseLong(price)), true)
-                        .addField("주문", getSide(side), true)
-                        .addField("timestamp", registeredTimeFormat, false);
+                        .setTitle(getSide(side) + " " + marketId)
+                        .setColor(getColor(side))
+                        .addField("가격",String.format("%,d", Long.parseLong(price)), true);
             }
 
             discordBot.addEmbed(embedObject);
@@ -82,5 +76,9 @@ public class DiscordService {
 
     private String getSide(String side) {
         return side.equals("ask") ? "매도" : "매수";
+    }
+
+    private Color getColor(String side) {
+        return side.equals("ask") ? Color.BLUE : Color.GREEN;
     }
 }

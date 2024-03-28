@@ -101,6 +101,6 @@ public class TechnicalIndicator {
         double standardDeviation = calculateStandardDeviation(candles, sma, period);
         double upperBand = sma + 2 * standardDeviation;
         double lowerBand = sma - 2 * standardDeviation;
-        return new long[]{(long)upperBand, (long)lowerBand};
+        return new long[]{(long)upperBand, (long)lowerBand, (long)sma};
     }
 }

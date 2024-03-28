@@ -31,7 +31,9 @@ public class UpbitController {
     public ResponseEntity<List<CandleResponse>> getCandles(@PathVariable(value = "unit") String unit,
                                                            @NotNull @RequestParam(value = "market") String market,
                                                            @NotNull @RequestParam(value = "count") int count) {
-        return ResponseEntity.status(HttpStatus.OK).body(upbitService.getCandles(market, unit, count));
+        List<CandleResponse> candles = upbitService.getCandles(unit, market, count);
+        System.out.println(Arrays.toString(technicalIndicator.calculateBollingerBand(candles, 20)));
+        return ResponseEntity.status(HttpStatus.OK).body(candles);
     }
 
     @GetMapping("/my-inquiry")
