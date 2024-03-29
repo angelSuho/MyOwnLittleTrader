@@ -57,6 +57,8 @@ public class UpbitService {
     private final DiscordService discordService;
     private final TechnicalIndicator technicalIndicator;
 
+    private final Random random = new Random();
+
     // 매수하지 않을 코인 리스트
     private static final List<String> COIN_NOT_BUY = List.of(
             "KRW-TRX", "KRW-XRP"
@@ -158,16 +160,21 @@ public class UpbitService {
             }
             double rsi = technicalIndicator.calculateUpbitRSI(candles, 14);
             long[] bollingerBand = technicalIndicator.calculateBollingerBand(candles, period);
-            
+
             // 매수 조건
             // 볼린저 밴드 하단 범위 설정. 하단 돌파부터 근접
-            double lowerBand = bollingerBand[1];
-            double lowerBandNear = lowerBand * 1.05; // 볼린저 밴드 하단의 5% 위
-            boolean isBandTrue = candles.get(0).getTradePrice() <= lowerBandNear && candles.get(0).getTradePrice() >= lowerBand;
+//            double lowerBand = bollingerBand[1];
+//            double lowerBandNear = lowerBand * 1.05; // 볼린저 밴드 하단의 5% 위
+//            boolean isBandTrue = candles.get(0).getTradePrice() <= lowerBandNear && candles.get(0).getTradePrice() >= lowerBand;
+
+            double currentTradePrice = candles.get(0).getTradePrice();
+            boolean isPriceDown = currentTradePrice <= candles.get(1).getTradePrice() * 0.95;
+            boolean isRSIOver = rsi > 70;
+            boolean isBandTrue = currentTradePrice <= bollingerBand[1] && currentTradePrice < bollingerBand[0];
             MATrendDirection goldenCross = technicalIndicator.isGoldenCross(candles);
 
-            if (rsi < 40 && isBandTrue && !COIN_NOT_BUY.contains(market) || goldenCross == GOLDEN_CROSS) {
-                evaluations.add(new CoinEvaluation(market, rsi, candles.get(0).getTradePrice(), bollingerBand[1]));
+            if (rsi < 40 && isBandTrue && !COIN_NOT_BUY.contains(market) && !isPriceDown || goldenCross == GOLDEN_CROSS && isRSIOver) {
+                evaluations.add(new CoinEvaluation(market, rsi, currentTradePrice, bollingerBand[1]));
             }
 
             delayMethod(150);
@@ -180,7 +187,6 @@ public class UpbitService {
         // 조건 부합 코인 출력
         evaluations.forEach(evaluation -> log.info("market: {}, RSI: {}, 가격: {}, 볼린저밴드 하단: {}", evaluation.getMarket(), evaluation.getRsi(), evaluation.getTradePrice(), evaluation.getLowerBollingerBand()));
 
-        Random random = new Random();
         List<Integer> randomIndexes = random.ints(0, evaluations.size())
                 .distinct()
                 .limit(Math.min(3, evaluations.size()))
@@ -208,14 +214,15 @@ public class UpbitService {
 
     @Transactional
     public void evaluateHoldingsForSell() {
-        delayMethod(2000);
-        log.warn("{} 보유 코인 매도 조건 평가 시작", getLocalDateTimeNow());
+        delayMethod(1000);
         List<CoinInquiryResponse> inquiries = getAccountInquiry();
-        List<ProfitPercentage> profitPercentages = arrangeProfit(inquiries);
         if (inquiries.size() <= 1) {
             log.info("보유 코인이 없어 매도하지 않습니다.");
             return;
+        } else {
+            log.warn("{} 보유 코인 매도 조건 평가 시작", getLocalDateTimeNow());
         }
+        List<ProfitPercentage> profitPercentages = arrangeProfit(inquiries);
 
         int period = 20;
         // unit == null ? 240 : days
@@ -263,7 +270,11 @@ public class UpbitService {
                         bollingerBands[0],
                         bollingerBands[1],
                         String.format("%.2f%%", profitAndLossPercentage));
-                log.info("매도 조건이 충족되지 않아 매도하지 않습니다.");
+
+                // 매도하지 않을 코인 리스트에 포함되어 있을 때
+                if (!COIN_NOT_SELL.contains(market)) {
+                    log.info("매도 조건이 충족되지 않아 매도하지 않습니다.");
+                }
             }
         }
     }

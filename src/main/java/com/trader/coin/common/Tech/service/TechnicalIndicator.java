@@ -44,10 +44,9 @@ public class TechnicalIndicator {
 
         boolean hasCrossed = MA15.get(0) > MA50.get(0) && MA15.get(1) <= MA50.get(1);
         boolean is15maTrendingUp = isTrendingUp(MA15, 4);
-        boolean isMiddleLineTrendingUp = isTrendingUp(bandMiddleLineList, 4);
         boolean is15maCrossedMiddleLine = MA15.get(0) > bandMiddleLineList.get(0) && MA15.get(1) <= bandMiddleLineList.get(1);
 
-        if (hasCrossed && is15maTrendingUp || is15maCrossedMiddleLine && isMiddleLineTrendingUp) {
+        if (hasCrossed && is15maTrendingUp || is15maCrossedMiddleLine) {
             return MATrendDirection.GOLDEN_CROSS;
         } else {
             return MATrendDirection.FLAT;
@@ -147,5 +146,23 @@ public class TechnicalIndicator {
             middleLines.add(sma); // 계산된 SMA 값을 반올림하여 long 타입으로 변환 후 추가
         }
         return middleLines;
+    }
+
+    public boolean isCandleRising(List<CandleResponse> candles, int n) {
+        if (candles.size() < 2) {
+            return false;
+        }
+        for (int i = 0; i < 2; i++) {
+            if (isPriceDifferenceOverNPercent(candles.get(i).getHighPrice(), candles.get(i).getLowPrice(), n)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private boolean isPriceDifferenceOverNPercent(double highPrice, double lowPrice, int n) {
+        double difference = highPrice - lowPrice;
+        double percentageDifference = (difference / lowPrice) * 100;
+        return percentageDifference >= n;
     }
 }
