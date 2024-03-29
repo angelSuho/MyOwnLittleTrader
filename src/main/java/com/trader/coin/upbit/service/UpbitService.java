@@ -57,9 +57,13 @@ public class UpbitService {
     private final DiscordService discordService;
     private final TechnicalIndicator technicalIndicator;
 
-    // 구매하지 않을 코인 리스트
+    // 매수하지 않을 코인 리스트
     private static final List<String> COIN_NOT_BUY = List.of(
             "KRW-TRX", "KRW-XRP"
+    );
+    // 매도하지 않을 코인 리스트
+    private static final List<String> COIN_NOT_SELL = List.of(
+            "KRW-BTC", "KRW-ETH"
     );
 
     public List<String> findMarkets() {
@@ -239,7 +243,8 @@ public class UpbitService {
             boolean isLossGreaterThan3Percent = profitAndLossPercentage <= -3;
 
             // 매도 조건
-            if ((rsi > 75 && candles.get(0).getTradePrice() > bollingerBands[0]) || isLossGreaterThan3Percent || hasDroppedFromMaxProfit) {
+            if (((rsi > 75 && candles.get(0).getTradePrice() > bollingerBands[0]) || isLossGreaterThan3Percent || hasDroppedFromMaxProfit)
+                    && !COIN_NOT_SELL.contains(market)) {
                 orderCoin(new CoinOrderRequest(market, "ask", String.valueOf(inquiry.getBalance()), null, "market"));
                 profitPercentageRepository.deleteByMarket(market);
                 discordService.sendDiscordAlertLog(market, String.valueOf(candles.get(0).getTradePrice()),
