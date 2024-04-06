@@ -5,14 +5,19 @@ import lombok.Getter;
 @Getter
 public class CoinEvaluation {
     private final String market;
-    private final double rsi;
+    private final long rsi;
     private final double tradePrice;
-    private final double lowerBollingerBand;
+    private final double[] bollingerBand;
+    private double accTradePrice24h;
 
-    public CoinEvaluation(String market, double rsi, double tradePrice, double lowerBollingerBand) {
+    public CoinEvaluation(String market, long rsi, double tradePrice, double[] bollingerBand) {
         this.market = market;
         this.rsi = rsi;
         this.tradePrice = tradePrice;
-        this.lowerBollingerBand = lowerBollingerBand;
+        this.bollingerBand = bollingerBand;
+    }
+
+    public void initAccTradePrice24h(double accTradePrice24h) {
+        this.accTradePrice24h = accTradePrice24h;
     }
 }

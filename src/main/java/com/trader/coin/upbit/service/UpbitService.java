@@ -38,9 +38,8 @@ import java.security.MessageDigest;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
-import java.util.stream.Collectors;
 
-import static com.trader.coin.common.domain.MATrendDirection.*;
+import static com.trader.coin.common.domain.MATrendDirection.GOLDEN_CROSS;
 import static java.nio.charset.StandardCharsets.UTF_8;
 
 @Slf4j
@@ -61,12 +60,24 @@ public class UpbitService {
 
     // 매수하지 않을 코인 리스트
     private static final List<String> COIN_NOT_BUY = List.of(
-            "KRW-TRX", "KRW-XRP"
+            "KRW-TRX", "KRW-XRP", "KRW-WAXP", "KRW-WAVES"
     );
     // 매도하지 않을 코인 리스트
     private static final List<String> COIN_NOT_SELL = List.of(
             "KRW-BTC", "KRW-ETH"
     );
+    private static final String UNIT = "days";  // days or minutes(1, 3, 5, 15, 30, 60, 240)
+    private static final int PERIOD = 20;
+    private static final double BID_PERCENTAGE = 0.25;
+    private static final int CANDLE_COUNT = 200;
+    private static final int RSI_PERIOD = 14;
+    private static final int RSI_SELLING_CONDITION = 75;
+
+    private static final int AFFORD_LOSS_VALUE = 3;
+    private static final int MAX_LOSS_VALUE = 6;
+    private static final int STOP_LOSS_LINE = -3;
+
+    private static final int NUMBER_OF_BUY = 3;
 
     public List<String> findMarkets() {
         WebClient client = WebClient.create(upbitProperties.getServerUrl());
@@ -131,127 +142,81 @@ public class UpbitService {
         return responseList;
     }
 
+    // 매수할 코인 평가 및 매수
+    @Transactional
     public void waitAndSeeOrderCoin() {
-        // unit == null ? days : 240
-        String unit = "240";
-        double bidPercentage = 0.25;
         List<CoinInquiryResponse> inquiries = getAccountInquiry();
         log.warn("{} 보유 코인 매수 조건 평가 시작", getLocalDateTimeNow());
-
-        List<String> markets = findMarkets();
-        long krwBalance = (long) Math.floor(inquiries.stream()
+        
+        long KRW_balance = (long) Math.floor(inquiries.stream()
                 .filter(inquiry -> inquiry.getCurrency().equals("KRW"))
                 .mapToDouble(CoinInquiryResponse::getBalance)
                 .findFirst()
                 .orElseThrow(() -> new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "KRW 잔고 조회에 실패했습니다.")));
-        delayMethod(150);
 
-        List<CoinEvaluation> evaluations = new ArrayList<>();
-        for (String market : markets) {
-            if (!market.contains("KRW")) {
-                continue;
-            }
-
-            int period = 20;
-            int count = 200;
-            List<CandleResponse> candles = getCandles(unit, market, count);
-            if (candles.size() < count) {
-                continue;
-            }
-            double rsi = technicalIndicator.calculateUpbitRSI(candles, 14);
-            long[] bollingerBand = technicalIndicator.calculateBollingerBand(candles, period);
-
-            // 매수 조건
-            // 볼린저 밴드 하단 범위 설정. 하단 돌파부터 근접
-//            double lowerBand = bollingerBand[1];
-//            double lowerBandNear = lowerBand * 1.05; // 볼린저 밴드 하단의 5% 위
-//            boolean isBandTrue = candles.get(0).getTradePrice() <= lowerBandNear && candles.get(0).getTradePrice() >= lowerBand;
-
-            double currentTradePrice = candles.get(0).getTradePrice();
-            boolean isPriceDown = currentTradePrice <= candles.get(1).getTradePrice() * 0.95;
-            boolean isRSIOver = rsi > 70;
-            boolean isBandTrue = currentTradePrice <= bollingerBand[1] && currentTradePrice < bollingerBand[0];
-            MATrendDirection goldenCross = technicalIndicator.isGoldenCross(candles);
-
-            if (rsi < 40 && isBandTrue && !COIN_NOT_BUY.contains(market) && !isPriceDown || goldenCross == GOLDEN_CROSS && isRSIOver) {
-                evaluations.add(new CoinEvaluation(market, rsi, currentTradePrice, bollingerBand[1]));
-            }
-
-            delayMethod(150);
-        }
-
+        // 매수할 코인 평가
+        List<CoinEvaluation> evaluations = evaluatePotentialBuys();
         if (evaluations.isEmpty()) {
             log.error("매수할 코인이 없습니다.");
             return;
         }
-        // 조건 부합 코인 출력
-        evaluations.forEach(evaluation -> log.info("market: {}, RSI: {}, 가격: {}, 볼린저밴드 하단: {}", evaluation.getMarket(), evaluation.getRsi(), evaluation.getTradePrice(), evaluation.getLowerBollingerBand()));
 
-        List<Integer> randomIndexes = random.ints(0, evaluations.size())
-                .distinct()
-                .limit(Math.min(3, evaluations.size()))
-                .boxed()
-                .toList();
-
-        // 랜덤 인덱스에 해당하는 CoinEvaluation 객체를 추출
-        List<CoinEvaluation> randomPicks = randomIndexes.stream()
-                .map(evaluations::get)
-                .toList();
-
-        if (inquiries.stream().anyMatch(inquiry -> inquiry.getCurrency().equals("KRW") && inquiry.getBalance() <= 5_000)) {
-            log.error("KRW 잔고가 5000원 이하이므로 매수하지 않습니다.");
+        // 거래량이 높은 코인순으로 정렬
+        List<CoinEvaluation> topEvaluations = generateListByAccTracePrice24H(evaluations);
+        if (KRW_balance * BID_PERCENTAGE <= 5_000) {
+            log.error("매수 금액이 5000원 이하이므로 매수하지 않습니다.");
             return;
         }
 
-        for (CoinEvaluation coin : randomPicks) {
-            String bidPrice = String.valueOf((long) (krwBalance * bidPercentage));
+        // 매수
+        for (CoinEvaluation coin : topEvaluations) {
+            String bidPrice = String.valueOf((long) (KRW_balance * BID_PERCENTAGE));
             orderCoin(new CoinOrderRequest(coin.getMarket(), "bid", null, bidPrice, "price"));
             log.info("market: {}, 가격: {} 매수", coin.getMarket(), bidPrice);
         }
 
-        arrangeProfit(inquiries);
+        // 손익률 계산
+        calculateProfitPercentage();
+        delayMethod(1000);
     }
 
+    // 매도할 코인 평가
     @Transactional
     public void evaluateHoldingsForSell() {
         delayMethod(1000);
         List<CoinInquiryResponse> inquiries = getAccountInquiry();
-        if (inquiries.size() <= 1) {
-            log.info("보유 코인이 없어 매도하지 않습니다.");
-            return;
-        } else {
-            log.warn("{} 보유 코인 매도 조건 평가 시작", getLocalDateTimeNow());
-        }
+        if (inquiries.size() <= 1) return;
+        else log.warn("{} 보유 코인 매도 조건 평가 시작", getLocalDateTimeNow());
+
         List<ProfitPercentage> profitPercentages = arrangeProfit(inquiries);
-
-        int period = 20;
-        // unit == null ? 240 : days
-        String unit = "240";
-
         for (CoinInquiryResponse inquiry : inquiries) {
-            if (inquiry.getCurrency().equals("KRW")) {
+            String market = inquiry.getUnitCurrency() + "-" + inquiry.getCurrency();
+            if (inquiry.getCurrency().equals("KRW") || COIN_NOT_SELL.contains(market)) {
                 continue;
             }
-            String market = inquiry.getUnitCurrency() + "-" + inquiry.getCurrency();
+            List<CandleResponse> candles = getCandles(UNIT, market, CANDLE_COUNT);
 
-            List<CandleResponse> candles = getCandles(unit, market, 200);
-            double rsi = technicalIndicator.calculateUpbitRSI(candles, 14);
-            long[] bollingerBands = technicalIndicator.calculateBollingerBand(candles, period);
-
+            long rsi = technicalIndicator.calculateUpbitRSI(candles, RSI_PERIOD);
+            double[] bollingerBands = technicalIndicator.calculateBollingerBand(candles, PERIOD);
             double currentMarketPrice = candles.get(0).getTradePrice();
             double avgBuyPrice = inquiry.getAvgBuyPrice();
-            ProfitPercentage profitPercentage = profitPercentages.stream().filter(profit -> profit.getMarket().equals(market))
-                    .findFirst().orElseThrow(() -> new BaseException(ErrorCode.NOT_FOUND, "해당 코인의 손익률을 찾을 수 없습니다."));
             double profitAndLossPercentage = (currentMarketPrice - avgBuyPrice) / avgBuyPrice * 100;
 
-            // 최대 수익률에서 5% 빠졌는지 확인합니다.
-            boolean hasDroppedFromMaxProfit = profitAndLossPercentage < profitPercentage.getProfitAndLossPercentage() - 5;
+            ProfitPercentage profitPercentage = profitPercentages.stream().filter(profit -> profit.getMarket().equals(market))
+                    .findFirst().orElseThrow(() -> new BaseException(ErrorCode.NOT_FOUND, "해당 코인의 손익률을 찾을 수 없습니다."));
+
+            // 최대 수익률에서 3% 이상 빠졌는지 확인합니다.
+            boolean hasDroppedFromNProfit = profitAndLossPercentage <= profitPercentage.getProfitAndLossPercentage() - AFFORD_LOSS_VALUE;
+            boolean hasDroppedFromMAXNProfit = profitAndLossPercentage <= profitPercentage.getProfitAndLossPercentage() - MAX_LOSS_VALUE;
             // 현재 손익률이 -3% 이하인지 확인합니다.
-            boolean isLossGreaterThan3Percent = profitAndLossPercentage <= -3;
+            boolean isLossGreaterThan3Percent = profitAndLossPercentage <= STOP_LOSS_LINE;
+            // 현재 추세가 상승 추세 인지 확인합니다.
+            List<Double> priceList = candles.stream().map(CandleResponse::getTradePrice).toList();
+            boolean trendingUp = technicalIndicator.isTrendingUp(priceList, 3);
 
             // 매도 조건
-            if (((rsi > 75 && candles.get(0).getTradePrice() > bollingerBands[0]) || isLossGreaterThan3Percent || hasDroppedFromMaxProfit)
-                    && !COIN_NOT_SELL.contains(market)) {
+            if ((rsi >= RSI_SELLING_CONDITION && candles.get(0).getTradePrice() > bollingerBands[0])
+                    || isLossGreaterThan3Percent || ((hasDroppedFromNProfit && !trendingUp) || hasDroppedFromMAXNProfit)) {
                 orderCoin(new CoinOrderRequest(market, "ask", String.valueOf(inquiry.getBalance()), null, "market"));
                 profitPercentageRepository.deleteByMarket(market);
                 discordService.sendDiscordAlertLog(market, String.valueOf(candles.get(0).getTradePrice()),
@@ -271,14 +236,14 @@ public class UpbitService {
                         bollingerBands[1],
                         String.format("%.2f%%", profitAndLossPercentage));
 
-                // 매도하지 않을 코인 리스트에 포함되어 있을 때
-                if (!COIN_NOT_SELL.contains(market)) {
-                    log.info("매도 조건이 충족되지 않아 매도하지 않습니다.");
-                }
+                if (!COIN_NOT_SELL.contains(market)) log.info("매도 조건이 충족되지 않아 매도하지 않습니다.");
             }
         }
+
+        calculateProfitPercentage();
     }
 
+    // 손익률 객체 생성
     @Transactional
     public void calculateProfitPercentage() {
         List<CoinInquiryResponse> inquiries = getAccountInquiry();
@@ -305,9 +270,11 @@ public class UpbitService {
                             () -> profitPercentageRepository.save(new ProfitPercentage(market, profitAndLossPercentage))
                     );
         }
-        log.info("현재 {} 손익률 계산 완료", now);
+
+        log.info("{} 손익률 계산 완료", now);
     }
 
+    // 주문 요청
     public void orderCoin(CoinOrderRequest coinOrderRequest) {
         Map<String, String> params = getOrderParams(coinOrderRequest);
         List<String> queryElements = new ArrayList<>();
@@ -360,23 +327,17 @@ public class UpbitService {
         }
     }
 
-    @Transactional
     private List<ProfitPercentage> arrangeProfit(List<CoinInquiryResponse> inquiries) {
         List<ProfitPercentage> percentages = profitPercentageRepository.findAll();
         List<String> markets = inquiries.stream()
                 .filter(inquiry -> !inquiry.getCurrency().equals("KRW"))
                 .map(inquiry -> inquiry.getUnitCurrency() + "-" + inquiry.getCurrency())
                 .toList();
-
-        // 삭제할 ProfitPercentage 객체를 찾습니다.
         List<ProfitPercentage> toDelete = percentages.stream()
                 .filter(profitPercentage -> !markets.contains(profitPercentage.getMarket()))
                 .toList();
 
-        // 삭제할 ProfitPercentage 객체를 삭제합니다.
         toDelete.forEach(profitPercentageRepository::delete);
-
-        // 삭제 후 남아 있는 ProfitPercentage 객체를 반환합니다.
         percentages.removeAll(toDelete);
         return percentages;
     }
@@ -402,8 +363,57 @@ public class UpbitService {
         return ticker.get(0);
     }
 
-    private String getLocalDateTimeNow() {
-        return DateTimeFormatter.ofPattern("yyyy년 MM월 dd일 HH시 mm분 ss초").format(LocalDateTime.now());
+    // 매수할 코인 평가
+    private List<CoinEvaluation> evaluatePotentialBuys() {
+        List<CoinEvaluation> evaluations = new ArrayList<>();
+        for (String market : findMarkets()) {
+            if (!market.contains("KRW") || COIN_NOT_BUY.contains(market)) {
+                continue;
+            }
+
+            List<CandleResponse> candles = getCandles(UNIT, market, CANDLE_COUNT);
+            if (candles.size() < CANDLE_COUNT) {
+                continue;
+            }
+
+            long rsi = technicalIndicator.calculateUpbitRSI(candles, RSI_PERIOD);
+            double[] bollingerBand = technicalIndicator.calculateBollingerBand(candles, PERIOD);
+
+            // 매수 조건
+            // 볼린저 밴드 하단 범위 설정. 하단 돌파부터 근접
+//            double lowerBand = bollingerBand[1];
+//            double lowerBandNear = lowerBand * 1.05; // 볼린저 밴드 하단의 5% 위
+//            boolean isBandTrue = candles.get(0).getTradePrice() <= lowerBandNear && candles.get(0).getTradePrice() >= lowerBand;
+
+            double currentTradePrice = candles.get(0).getTradePrice();
+            boolean isPriceDown = currentTradePrice <= candles.get(1).getTradePrice() * 0.95;
+            boolean isBandTrue = currentTradePrice <= bollingerBand[1] && currentTradePrice < bollingerBand[0];
+            MATrendDirection goldenCross = technicalIndicator.isGoldenCross(candles);
+
+            if ((rsi < 35 && isBandTrue && !isPriceDown) || (goldenCross == GOLDEN_CROSS && !(rsi > 70))) {
+                evaluations.add(new CoinEvaluation(market, rsi, currentTradePrice, bollingerBand));
+            }
+
+            delayMethod(300);
+        }
+        return evaluations;
+    }
+
+    // 매수할 코인 리스트 24시간 거래량 순으로 정렬
+    private List<CoinEvaluation> generateListByAccTracePrice24H(List<CoinEvaluation> evaluations) {
+        evaluations.forEach(
+                evaluation -> {
+                    double accTradePrice24h = getTicker(evaluation.getMarket()).getAccTradePrice24h();
+                    evaluation.initAccTradePrice24h(accTradePrice24h);
+                }
+        );
+        List<CoinEvaluation> sortedEvaluations = evaluations.stream()
+                .sorted(Comparator.comparingDouble(CoinEvaluation::getAccTradePrice24h).reversed())
+                .toList();
+
+        return sortedEvaluations.stream()
+                .limit(NUMBER_OF_BUY)
+                .toList();
     }
 
     private Map<String, String> getOrderParams(CoinOrderRequest coinOrderRequest) {
@@ -420,5 +430,9 @@ public class UpbitService {
             params.put("ord_type", coinOrderRequest.getOrd_type());
         }
         return params;
+    }
+
+    private String getLocalDateTimeNow() {
+        return DateTimeFormatter.ofPattern("yyyy년 MM월 dd일 HH시 mm분 ss초").format(LocalDateTime.now());
     }
 }

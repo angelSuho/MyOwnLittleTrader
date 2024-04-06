@@ -43,7 +43,7 @@ public class TechnicalIndicator {
         }
 
         boolean hasCrossed = MA15.get(0) > MA50.get(0) && MA15.get(1) <= MA50.get(1);
-        boolean is15maTrendingUp = isTrendingUp(MA15, 4);
+        boolean is15maTrendingUp = isTrendingUp(MA15, 3);
         boolean is15maCrossedMiddleLine = MA15.get(0) > bandMiddleLineList.get(0) && MA15.get(1) <= bandMiddleLineList.get(1);
 
         if (hasCrossed && is15maTrendingUp || is15maCrossedMiddleLine) {
@@ -80,7 +80,7 @@ public class TechnicalIndicator {
         return Math.sqrt(variance / period);
     }
 
-    public double calculateUpbitRSI(List<CandleResponse> candles, int period) {
+    public long  calculateUpbitRSI(List<CandleResponse> candles, int period) {
         candles = candles.stream()
                 .sorted(Comparator.comparing(CandleResponse::getTimestamp))
                 .toList();
@@ -127,15 +127,15 @@ public class TechnicalIndicator {
         double ad = downEma;
         double rs = au / ad;
 
-        return 100 - (100 / (1 + rs));
+        return (long) Math.floor(100 - (100 / (1 + rs)));
     }
 
-    public long[] calculateBollingerBand(List<CandleResponse> candles, int period) {
+    public double[] calculateBollingerBand(List<CandleResponse> candles, int period) {
         double sma = calculateSMA(candles, period);
         double standardDeviation = calculateStandardDeviation(candles, sma, period);
         double upperBand = sma + 2 * standardDeviation;
         double lowerBand = sma - 2 * standardDeviation;
-        return new long[]{(long)upperBand, (long)lowerBand, (long)sma};
+        return new double[]{upperBand, lowerBand, sma};
     }
 
     public List<Double> calculateBollingerBandMiddleLineList(List<CandleResponse> candles, int period) {
