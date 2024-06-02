@@ -13,7 +13,7 @@ import com.trader.coin.crypto.infrastructure.jwt.JwtTokenUtil;
 import com.trader.coin.upbit.domain.CoinEvaluation;
 import com.trader.coin.upbit.domain.ProfitPercentage;
 import com.trader.coin.upbit.infrastructure.ProfitPercentageRepository;
-import com.trader.coin.upbit.infrastructure.config.UpbitProperties;
+import com.trader.coin.upbit.infrastructure.config.APIProperties;
 import com.trader.coin.upbit.presentation.dto.CoinInquiryResponse;
 import com.trader.coin.upbit.presentation.dto.CoinOrderRequest;
 import com.trader.coin.upbit.service.dto.CandleResponse;
@@ -50,37 +50,14 @@ public class UpbitService {
     private final ProfitPercentageRepository profitPercentageRepository;
 
     private final ObjectMapper objectMapper;
-    private final UpbitProperties upbitProperties;
+    private final APIProperties apiProperties;
 
     private final JwtTokenUtil jwtTokenUtil;
     private final DiscordService discordService;
     private final TechnicalIndicator technicalIndicator;
 
-    private final Random random = new Random();
-
-    // 매수하지 않을 코인 리스트
-    private static final List<String> COIN_NOT_BUY = List.of(
-            "KRW-TRX", "KRW-XRP", "KRW-WAXP", "KRW-WAVES"
-    );
-    // 매도하지 않을 코인 리스트
-    private static final List<String> COIN_NOT_SELL = List.of(
-            "KRW-BTC", "KRW-ETH"
-    );
-    private static final String UNIT = "days";  // days or minutes(1, 3, 5, 15, 30, 60, 240)
-    private static final int PERIOD = 20;
-    private static final double BID_PERCENTAGE = 0.25;
-    private static final int CANDLE_COUNT = 200;
-    private static final int RSI_PERIOD = 14;
-    private static final int RSI_SELLING_CONDITION = 75;
-
-    private static final int AFFORD_LOSS_VALUE = 3;
-    private static final int MAX_LOSS_VALUE = 6;
-    private static final int STOP_LOSS_LINE = -3;
-
-    private static final int NUMBER_OF_BUY = 3;
-
     public List<String> findMarkets() {
-        WebClient client = WebClient.create(upbitProperties.getServerUrl());
+        WebClient client = WebClient.create(getServerUrl());
         String responseBody = client.get()
                 .uri("/v1/market/all")
                 .retrieve()
@@ -97,7 +74,7 @@ public class UpbitService {
     }
 
     public List<CandleResponse> getCandles(String unit, String market, int count) {
-        WebClient client = WebClient.create(upbitProperties.getServerUrl());
+        WebClient client = WebClient.create(getServerUrl());
         String path = Objects.equals(unit, "days") ? "/days" : "/minutes/" + unit;
 
         String responseBody = client.get()
@@ -121,8 +98,8 @@ public class UpbitService {
     }
 
     public List<CoinInquiryResponse> getAccountInquiry() {
-        String token = jwtTokenUtil.getAuthenticationToken(upbitProperties);
-        WebClient client = WebClient.create(upbitProperties.getServerUrl());
+        String token = jwtTokenUtil.getAuthenticationToken(apiProperties);
+        WebClient client = WebClient.create(getServerUrl());
 
         String responseBody = client.get()
                 .uri("/v1/accounts")
@@ -146,7 +123,7 @@ public class UpbitService {
     @Transactional
     public void waitAndSeeOrderCoin() {
         List<CoinInquiryResponse> inquiries = getAccountInquiry();
-        log.warn("{} 보유 코인 매수 조건 평가 시작", getLocalDateTimeNow());
+        log.warn("{} 코인 매수 {}캔들 조건 평가 시작", getLocalDateTimeNow(), apiProperties.getUNIT());
         
         long KRW_balance = (long) Math.floor(inquiries.stream()
                 .filter(inquiry -> inquiry.getCurrency().equals("KRW"))
@@ -161,17 +138,17 @@ public class UpbitService {
             return;
         }
 
-        // 거래량이 높은 코인순으로 정렬
+        // 거래량이 높은 코인순으로 정렬 BID_PERCENTAGE
         List<CoinEvaluation> topEvaluations = generateListByAccTracePrice24H(evaluations);
-        if (KRW_balance * BID_PERCENTAGE <= 5_000) {
+        if (KRW_balance * apiProperties.getBID_PERCENTAGE() <= 5_000) {
             log.error("매수 금액이 5000원 이하이므로 매수하지 않습니다.");
             return;
         }
 
         // 매수
         for (CoinEvaluation coin : topEvaluations) {
-            String bidPrice = String.valueOf((long) (KRW_balance * BID_PERCENTAGE));
-            orderCoin(new CoinOrderRequest(coin.getMarket(), "bid", null, bidPrice, "price"));
+            String bidPrice = String.valueOf((long) (KRW_balance * apiProperties.getBID_PERCENTAGE()));
+//            orderCoin(new CoinOrderRequest(coin.getMarket(), "bid", null, bidPrice, "price"));
             log.info("market: {}, 가격: {} 매수", coin.getMarket(), bidPrice);
         }
 
@@ -191,13 +168,13 @@ public class UpbitService {
         List<ProfitPercentage> profitPercentages = arrangeProfit(inquiries);
         for (CoinInquiryResponse inquiry : inquiries) {
             String market = inquiry.getUnitCurrency() + "-" + inquiry.getCurrency();
-            if (inquiry.getCurrency().equals("KRW") || COIN_NOT_SELL.contains(market)) {
+            if (inquiry.getCurrency().equals("KRW") || apiProperties.getCOIN_NOT_SELL().contains(market)) {
                 continue;
             }
-            List<CandleResponse> candles = getCandles(UNIT, market, CANDLE_COUNT);
+            List<CandleResponse> candles = getCandles(apiProperties.getUNIT(), market, apiProperties.getCANDLE_COUNT());
 
-            long rsi = technicalIndicator.calculateUpbitRSI(candles, RSI_PERIOD);
-            double[] bollingerBands = technicalIndicator.calculateBollingerBand(candles, PERIOD);
+            long rsi = technicalIndicator.calculateUpbitRSI(candles, apiProperties.getRSI_PERIOD());
+            double[] bollingerBands = technicalIndicator.calculateBollingerBand(candles, apiProperties.getPERIOD());
             double currentMarketPrice = candles.get(0).getTradePrice();
             double avgBuyPrice = inquiry.getAvgBuyPrice();
             double profitAndLossPercentage = (currentMarketPrice - avgBuyPrice) / avgBuyPrice * 100;
@@ -206,16 +183,16 @@ public class UpbitService {
                     .findFirst().orElseThrow(() -> new BaseException(ErrorCode.NOT_FOUND, "해당 코인의 손익률을 찾을 수 없습니다."));
 
             // 최대 수익률에서 3% 이상 빠졌는지 확인합니다.
-            boolean hasDroppedFromNProfit = profitAndLossPercentage <= profitPercentage.getProfitAndLossPercentage() - AFFORD_LOSS_VALUE;
-            boolean hasDroppedFromMAXNProfit = profitAndLossPercentage <= profitPercentage.getProfitAndLossPercentage() - MAX_LOSS_VALUE;
+            boolean hasDroppedFromNProfit = profitAndLossPercentage <= profitPercentage.getProfitAndLossPercentage() - apiProperties.getAFFORD_LOSS_VALUE();
+            boolean hasDroppedFromMAXNProfit = profitAndLossPercentage <= profitPercentage.getProfitAndLossPercentage() - apiProperties.getMAX_LOSS_VALUE();
             // 현재 손익률이 -3% 이하인지 확인합니다.
-            boolean isLossGreaterThan3Percent = profitAndLossPercentage <= STOP_LOSS_LINE;
+            boolean isLossGreaterThan3Percent = profitAndLossPercentage <= apiProperties.getSTOP_LOSS_LINE();
             // 현재 추세가 상승 추세 인지 확인합니다.
             List<Double> priceList = candles.stream().map(CandleResponse::getTradePrice).toList();
             boolean trendingUp = technicalIndicator.isTrendingUp(priceList, 3);
 
             // 매도 조건
-            if ((rsi >= RSI_SELLING_CONDITION && candles.get(0).getTradePrice() > bollingerBands[0])
+            if ((rsi >= apiProperties.getRSI_SELLING_CONDITION() && candles.get(0).getTradePrice() > bollingerBands[0])
                     || isLossGreaterThan3Percent || ((hasDroppedFromNProfit && !trendingUp) || hasDroppedFromMAXNProfit)) {
                 orderCoin(new CoinOrderRequest(market, "ask", String.valueOf(inquiry.getBalance()), null, "market"));
                 profitPercentageRepository.deleteByMarket(market);
@@ -236,7 +213,7 @@ public class UpbitService {
                         bollingerBands[1],
                         String.format("%.2f%%", profitAndLossPercentage));
 
-                if (!COIN_NOT_SELL.contains(market)) log.info("매도 조건이 충족되지 않아 매도하지 않습니다.");
+                if (!apiProperties.getCOIN_NOT_SELL().contains(market)) log.info("매도 조건이 충족되지 않아 매도하지 않습니다.");
             }
         }
 
@@ -292,13 +269,13 @@ public class UpbitService {
         }
 
         String queryHash = String.format("%0128x", new BigInteger(1, md.digest()));
-        String token = jwtTokenUtil.getAuthenticationToken(upbitProperties, queryHash);
+        String token = jwtTokenUtil.getAuthenticationToken(apiProperties, queryHash);
 
         // webclient 안됨. httpclient로 대체
         HttpEntity entity;
         try {
             HttpClient client = HttpClientBuilder.create().build();
-            HttpPost request = new HttpPost(upbitProperties.getServerUrl() + "/v1/orders");
+            HttpPost request = new HttpPost(apiProperties.getServerUrl() + "/v1/orders");
             request.setHeader("Content-Type", "application/json");
             request.addHeader("Authorization", token);
             request.setEntity(new StringEntity(new Gson().toJson(params)));
@@ -343,7 +320,7 @@ public class UpbitService {
     }
 
     private TickerResponse getTicker(String market) {
-        WebClient client = WebClient.create(upbitProperties.getServerUrl());
+        WebClient client = WebClient.create(getServerUrl());
         String responseBody = client.get()
                 .uri(uriBuilder -> uriBuilder
                         .path("/v1/ticker")
@@ -367,17 +344,17 @@ public class UpbitService {
     private List<CoinEvaluation> evaluatePotentialBuys() {
         List<CoinEvaluation> evaluations = new ArrayList<>();
         for (String market : findMarkets()) {
-            if (!market.contains("KRW") || COIN_NOT_BUY.contains(market)) {
+            if (!market.contains("KRW") || apiProperties.getCOIN_NOT_BUY().contains(market)) {
                 continue;
             }
 
-            List<CandleResponse> candles = getCandles(UNIT, market, CANDLE_COUNT);
-            if (candles.size() < CANDLE_COUNT) {
+            List<CandleResponse> candles = getCandles(apiProperties.getUNIT(), market, apiProperties.getCANDLE_COUNT());
+            if (candles.size() < apiProperties.getCANDLE_COUNT()) {
                 continue;
             }
 
-            long rsi = technicalIndicator.calculateUpbitRSI(candles, RSI_PERIOD);
-            double[] bollingerBand = technicalIndicator.calculateBollingerBand(candles, PERIOD);
+            long rsi = technicalIndicator.calculateUpbitRSI(candles, apiProperties.getRSI_PERIOD());
+            double[] bollingerBand = technicalIndicator.calculateBollingerBand(candles, apiProperties.getPERIOD());
 
             // 매수 조건
             // 볼린저 밴드 하단 범위 설정. 하단 돌파부터 근접
@@ -390,7 +367,8 @@ public class UpbitService {
             boolean isBandTrue = currentTradePrice <= bollingerBand[1] && currentTradePrice < bollingerBand[0];
             MATrendDirection goldenCross = technicalIndicator.isGoldenCross(candles);
 
-            if ((rsi < 35 && isBandTrue && !isPriceDown) || (goldenCross == GOLDEN_CROSS && !(rsi > 70))) {
+
+            if ((rsi < apiProperties.getRSI_BUYING_CONDITION() && isBandTrue && !isPriceDown) || (goldenCross == GOLDEN_CROSS && !(rsi > apiProperties.getRSI_SELLING_CONDITION()))) {
                 evaluations.add(new CoinEvaluation(market, rsi, currentTradePrice, bollingerBand));
             }
 
@@ -405,14 +383,16 @@ public class UpbitService {
                 evaluation -> {
                     double accTradePrice24h = getTicker(evaluation.getMarket()).getAccTradePrice24h();
                     evaluation.initAccTradePrice24h(accTradePrice24h);
+                    delayMethod(100);
                 }
         );
         List<CoinEvaluation> sortedEvaluations = evaluations.stream()
                 .sorted(Comparator.comparingDouble(CoinEvaluation::getAccTradePrice24h).reversed())
                 .toList();
+        sortedEvaluations.forEach(evaluation -> log.info("market: {}, 거래량: {}", evaluation.getMarket(), evaluation.getAccTradePrice24h()));
 
         return sortedEvaluations.stream()
-                .limit(NUMBER_OF_BUY)
+                .limit(apiProperties.getNUMBER_OF_BUY())
                 .toList();
     }
 
@@ -434,5 +414,15 @@ public class UpbitService {
 
     private String getLocalDateTimeNow() {
         return DateTimeFormatter.ofPattern("yyyy년 MM월 dd일 HH시 mm분 ss초").format(LocalDateTime.now());
+    }
+
+    private String getServerUrl() {
+        String serverUrl;
+        if (apiProperties.getCrypto_market().equals("upbit")) {
+            serverUrl = apiProperties.getUpbit().getServerUrl();
+        } else {
+            serverUrl = apiProperties.getBinance().getServerUrl();
+        }
+        return serverUrl;
     }
 }

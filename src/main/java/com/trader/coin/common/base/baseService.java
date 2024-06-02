@@ -13,7 +13,7 @@ public class baseService implements ApplicationRunner {
     private final UpbitService upbitService;
 
     @Override
-    public void run(ApplicationArguments args) throws Exception {
+    public void run(ApplicationArguments args) {
         upbitService.calculateProfitPercentage();
         upbitService.waitAndSeeOrderCoin();
     }
