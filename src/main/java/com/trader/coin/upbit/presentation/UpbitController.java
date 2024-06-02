@@ -1,10 +1,9 @@
 package com.trader.coin.upbit.presentation;
 
-import com.trader.coin.common.Tech.service.TechnicalIndicator;
 import com.trader.coin.upbit.presentation.dto.CoinInquiryResponse;
 import com.trader.coin.upbit.presentation.dto.CoinOrderRequest;
-import com.trader.coin.upbit.service.dto.CandleResponse;
 import com.trader.coin.upbit.service.UpbitService;
+import com.trader.coin.upbit.service.dto.CandleResponse;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import lombok.RequiredArgsConstructor;
@@ -12,15 +11,13 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.Arrays;
 import java.util.List;
 
 @RestController
 @RequiredArgsConstructor
-@RequestMapping("/api/coin")
+@RequestMapping("/api/coin/upbit")
 public class UpbitController {
     private final UpbitService upbitService;
-    private final TechnicalIndicator technicalIndicator;
 
     @GetMapping("/markets")
     public ResponseEntity<List<String>> getMarkets() {

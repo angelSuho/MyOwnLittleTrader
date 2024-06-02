@@ -1,4 +1,4 @@
-package com.trader.coin.upbit.infrastructure;
+package com.trader.coin.common.infrastructure;
 
 import com.trader.coin.upbit.domain.ProfitPercentage;
 import org.springframework.data.jpa.repository.JpaRepository;

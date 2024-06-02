@@ -2,7 +2,7 @@ package com.trader.coin.crypto.infrastructure.jwt;
 
 import com.auth0.jwt.JWT;
 import com.auth0.jwt.algorithms.Algorithm;
-import com.trader.coin.upbit.infrastructure.config.APIProperties;
+import com.trader.coin.common.infrastructure.config.APIProperties;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 

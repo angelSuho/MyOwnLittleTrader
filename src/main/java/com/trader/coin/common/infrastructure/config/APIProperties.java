@@ -1,4 +1,4 @@
-package com.trader.coin.upbit.infrastructure.config;
+package com.trader.coin.common.infrastructure.config;
 
 import lombok.Getter;
 import lombok.Setter;
