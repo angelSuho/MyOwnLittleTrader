@@ -275,7 +275,7 @@ public class UpbitService {
         HttpEntity entity;
         try {
             HttpClient client = HttpClientBuilder.create().build();
-            HttpPost request = new HttpPost(apiProperties.getServerUrl() + "/v1/orders");
+            HttpPost request = new HttpPost(getServerUrl() + "/v1/orders");
             request.setHeader("Content-Type", "application/json");
             request.addHeader("Authorization", token);
             request.setEntity(new StringEntity(new Gson().toJson(params)));
