@@ -3,11 +3,15 @@ package com.trader.coin.binance.service;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.trader.coin.binance.service.dto.MarketResponse;
 import com.trader.coin.common.Tech.service.TechnicalIndicator;
 import com.trader.coin.common.infrastructure.ProfitPercentageRepository;
 import com.trader.coin.common.infrastructure.alert.discord.DiscordService;
 import com.trader.coin.common.infrastructure.config.APIProperties;
+import com.trader.coin.common.infrastructure.config.exception.BaseException;
+import com.trader.coin.common.infrastructure.config.exception.ErrorCode;
 import com.trader.coin.crypto.infrastructure.jwt.JwtTokenUtil;
+import com.trader.coin.upbit.service.dto.CandleResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpHeaders;
@@ -16,6 +20,7 @@ import org.springframework.web.reactive.function.client.WebClient;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -31,25 +36,52 @@ public class BinanceService {
     private final DiscordService discordService;
     private final TechnicalIndicator technicalIndicator;
 
-    public List<String> findMarkets() {
+    public List<MarketResponse> findMarkets() {
         WebClient client = WebClient.builder()
-                .baseUrl(api.getBinance().getServerUrl()) // URL은 여기에 설정
-                .defaultHeader(HttpHeaders.AUTHORIZATION, "Bearer " + api.getBinance().getSecretKey())
+                .baseUrl(api.getBinance().getServerUrl())
                 .build();
 
-        return client.get()
-                .uri("/fapi/v1/ping")
+        List<MarketResponse> marketResponses;
+        String response = client.get()
+                .uri("/api/v3/ticker/price")
                 .retrieve()
                 .bodyToMono(String.class)
-                .map(responseBody -> {
-                    try {
-                        List<Map<String, String>> responseList = objectMapper.readValue(responseBody, new TypeReference<>() {
-                        });
-                        return responseList.stream().map(map -> map.get("market")).collect(Collectors.toList());
-                    } catch (JsonProcessingException e) {
-                        throw new RuntimeException("응답 데이터 변환에 실패했습니다.", e);
-                    }
-                }).block();
+                .block();
+
+        try {
+            marketResponses = objectMapper.readValue(response, new TypeReference<List<MarketResponse>>() {});
+        } catch (JsonProcessingException e) {
+            throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "응답 데이터 변환에 실패했습니다.");
+        }
+        return marketResponses;
     }
+
+    public List<CandleResponse> getCandles(String unit, String market, int count) {
+        WebClient client = WebClient.create(api.getUpbit().getServerUrl());
+        String path = Objects.equals(unit, "days") ? "/days" : "/minutes/" + unit;
+
+        String responseBody = client.get()
+                .uri(uriBuilder -> uriBuilder
+                        .path("/v1/candles" + path)
+                        .queryParam("market", market)
+                        .queryParam("count", count)
+                        .build())
+                .retrieve()
+                .bodyToMono(String.class)
+                .block();
+
+        List<CandleResponse> responseList;
+        try {
+            responseList = objectMapper.readValue(responseBody, new TypeReference<>() {});
+        } catch (JsonProcessingException e) {
+            throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "응답 데이터 변환에 실패했습니다.");
+        }
+
+        return responseList;
+    }
+
+
+
+
 
 }

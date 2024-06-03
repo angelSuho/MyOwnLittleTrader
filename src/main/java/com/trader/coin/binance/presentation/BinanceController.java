@@ -1,6 +1,7 @@
 package com.trader.coin.binance.presentation;
 
 import com.trader.coin.binance.service.BinanceService;
+import com.trader.coin.binance.service.dto.MarketResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -17,7 +18,7 @@ public class BinanceController {
     private final BinanceService binanceService;
 
     @GetMapping("/markets")
-    public ResponseEntity<List<String>> getMarkets() {
+    public ResponseEntity<List<MarketResponse>> getMarkets() {
         return ResponseEntity.status(HttpStatus.OK).body(binanceService.findMarkets());
     }
 }
