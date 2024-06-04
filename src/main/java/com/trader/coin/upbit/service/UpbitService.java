@@ -121,7 +121,7 @@ public class UpbitService {
     @Transactional
     public void waitAndSeeOrderCoin() {
         List<CoinInquiryResponse> inquiries = getAccountInquiry();
-        log.warn("{} 코인 매수 {}캔들 조건 평가 시작", getLocalDateTimeNow(), api.getUNIT());
+        log.warn("{} 코인 매수 {}캔들 조건 평가 시작", getLocalDateTimeNow(), api.getUpbit_UNIT());
         
         long KRW_balance = (long) Math.floor(inquiries.stream()
                 .filter(inquiry -> inquiry.getCurrency().equals("KRW"))
@@ -169,7 +169,7 @@ public class UpbitService {
             if (inquiry.getCurrency().equals("KRW") || api.getCOIN_NOT_SELL().contains(market)) {
                 continue;
             }
-            List<CandleResponse> candles = getCandles(api.getUNIT(), market, api.getCANDLE_COUNT());
+            List<CandleResponse> candles = getCandles(api.getUpbit_UNIT(), market, api.getCANDLE_COUNT());
 
             long rsi = technicalIndicator.calculateUpbitRSI(candles, api.getRSI_PERIOD());
             double[] bollingerBands = technicalIndicator.calculateBollingerBand(candles, api.getPERIOD());
@@ -346,7 +346,7 @@ public class UpbitService {
                 continue;
             }
 
-            List<CandleResponse> candles = getCandles(api.getUNIT(), market, api.getCANDLE_COUNT());
+            List<CandleResponse> candles = getCandles(api.getUpbit_UNIT(), market, api.getCANDLE_COUNT());
             if (candles.size() < api.getCANDLE_COUNT()) {
                 continue;
             }

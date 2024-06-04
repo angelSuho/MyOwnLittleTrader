@@ -22,7 +22,8 @@ public class APIProperties {
     );
 
     private final String crypto_market = "upbit";
-    private final String UNIT = "240";  // days or minutes(1, 3, 5, 15, 30, 60, 240)
+    private final String upbit_UNIT = "240";  // days or minutes(1, 3, 5, 15, 30, 60, 240)
+    private final String binance_INTERVAL = "1h";  // 15m, 30, 1h, 4h, 1d
     private final int PERIOD = 20;
     private final double BID_PERCENTAGE = 0.25;
     private final int CANDLE_COUNT = 200;

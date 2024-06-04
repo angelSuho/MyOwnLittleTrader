@@ -14,14 +14,10 @@ import com.trader.coin.crypto.infrastructure.jwt.JwtTokenUtil;
 import com.trader.coin.upbit.service.dto.CandleResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.http.HttpHeaders;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 
 import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -36,7 +32,7 @@ public class BinanceService {
     private final DiscordService discordService;
     private final TechnicalIndicator technicalIndicator;
 
-    public List<MarketResponse> findMarkets() {
+    public List<MarketResponse> getMarkets() {
         WebClient client = WebClient.builder()
                 .baseUrl(api.getBinance().getServerUrl())
                 .build();
@@ -49,27 +45,31 @@ public class BinanceService {
                 .block();
 
         try {
-            marketResponses = objectMapper.readValue(response, new TypeReference<List<MarketResponse>>() {});
+            marketResponses = objectMapper.readValue(response, new TypeReference<>() {});
+            marketResponses = marketResponses.stream()
+                    .filter(market -> market.getSymbol().contains("USDT"))
+                    .toList();
+
         } catch (JsonProcessingException e) {
             throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "응답 데이터 변환에 실패했습니다.");
         }
         return marketResponses;
     }
 
-    public List<CandleResponse> getCandles(String unit, String market, int count) {
-        WebClient client = WebClient.create(api.getUpbit().getServerUrl());
-        String path = Objects.equals(unit, "days") ? "/days" : "/minutes/" + unit;
+    public List<CandleResponse> getCandles(String market) {
+        WebClient client = WebClient.create(api.getBinance().getServerUrl());
 
         String responseBody = client.get()
                 .uri(uriBuilder -> uriBuilder
-                        .path("/v1/candles" + path)
-                        .queryParam("market", market)
-                        .queryParam("count", count)
+                        .path("/api/v3/klines")
+                        .queryParam("symbol", market + "USDT")
+                        .queryParam("interval", api.getBinance_INTERVAL())
                         .build())
                 .retrieve()
                 .bodyToMono(String.class)
                 .block();
 
+        System.out.println(responseBody);
         List<CandleResponse> responseList;
         try {
             responseList = objectMapper.readValue(responseBody, new TypeReference<>() {});
