@@ -121,7 +121,7 @@ public class UpbitService {
     @Transactional
     public void waitAndSeeOrderCoin() {
         List<CoinInquiryResponse> inquiries = getAccountInquiry();
-        log.warn("{} 코인 매수 {}캔들 조건 평가 시작", getLocalDateTimeNow(), api.getUpbit_UNIT());
+        log.warn("업비트 {} 코인 매수 {}캔들 조건 평가 시작", getLocalDateTimeNow(), api.getUpbit_UNIT());
         
         long KRW_balance = (long) Math.floor(inquiries.stream()
                 .filter(inquiry -> inquiry.getCurrency().equals("KRW"))
@@ -294,14 +294,6 @@ public class UpbitService {
                 coinOrderRequest.getVolume(), coinOrderRequest.getSide());
     }
 
-    public void delayMethod(int millis) {
-        try {
-            Thread.sleep(millis);
-        } catch (InterruptedException e) {
-            throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "요청 대기 중 오류가 발생했습니다.");
-        }
-    }
-
     private List<ProfitPercentage> arrangeProfit(List<CoinInquiryResponse> inquiries) {
         List<ProfitPercentage> percentages = profitPercentageRepository.findAll();
         List<String> markets = inquiries.stream()
@@ -408,6 +400,13 @@ public class UpbitService {
             params.put("ord_type", coinOrderRequest.getOrd_type());
         }
         return params;
+    }
+    private void delayMethod(int millis) {
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException e) {
+            throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "요청 대기 중 오류가 발생했습니다.");
+        }
     }
 
     private String getLocalDateTimeNow() {

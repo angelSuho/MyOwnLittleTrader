@@ -1,8 +1,8 @@
 package com.trader.coin.binance.presentation;
 
 import com.trader.coin.binance.service.BinanceService;
+import com.trader.coin.binance.service.dto.CandleResponse;
 import com.trader.coin.binance.service.dto.MarketResponse;
-import com.trader.coin.upbit.service.dto.CandleResponse;
 import jakarta.validation.constraints.NotNull;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -28,5 +28,10 @@ public class BinanceController {
     @GetMapping("/candles")
     public ResponseEntity<List<CandleResponse>> getCandles(@RequestParam("market") @NotNull String market) {
         return ResponseEntity.status(HttpStatus.OK).body(binanceService.getCandles(market));
+    }
+
+    @GetMapping("/ticker")
+    public ResponseEntity<Double> getTicker() {
+        return ResponseEntity.status(HttpStatus.OK).body(binanceService.getTicker());
     }
 }
