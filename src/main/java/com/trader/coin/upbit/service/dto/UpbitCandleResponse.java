@@ -1,6 +1,7 @@
 package com.trader.coin.upbit.service.dto;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.trader.coin.common.service.dto.CandleData;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
@@ -8,7 +9,7 @@ import static lombok.AccessLevel.*;
 
 @Getter
 @NoArgsConstructor(access = PROTECTED)
-public class CandleResponse {
+public class UpbitCandleResponse extends CandleData {
     private String market;
     @JsonProperty("candle_date_time_utc")
     private String candleDateTimeUtc;
@@ -35,10 +36,10 @@ public class CandleResponse {
     private Double changeRate;
     private Integer unit;
 
-    public CandleResponse(String market, String candleDateTimeUtc, String candleDateTimeKst,
-                          double openingPrice, double highPrice, double lowPrice, double tradePrice,
-                          long timestamp, double candleAccTradePrice, double candleAccTradeVolume,
-                          int unit) {
+    public UpbitCandleResponse(String market, String candleDateTimeUtc, String candleDateTimeKst,
+                               double openingPrice, double highPrice, double lowPrice, double tradePrice,
+                               long timestamp, double candleAccTradePrice, double candleAccTradeVolume,
+                               int unit) {
         this.market = market;
         this.candleDateTimeUtc = candleDateTimeUtc;
         this.candleDateTimeKst = candleDateTimeKst;
@@ -52,10 +53,10 @@ public class CandleResponse {
         this.unit = unit;
     }
 
-    public CandleResponse(String market, String candleDateTimeUtc, String candleDateTimeKst,
-                          double openingPrice, double highPrice, double lowPrice, double tradePrice,
-                          long timestamp, double candleAccTradePrice, double candleAccTradeVolume,
-                          Double prevClosingPrice, Double changePrice, Double changeRate) {
+    public UpbitCandleResponse(String market, String candleDateTimeUtc, String candleDateTimeKst,
+                               double openingPrice, double highPrice, double lowPrice, double tradePrice,
+                               long timestamp, double candleAccTradePrice, double candleAccTradeVolume,
+                               Double prevClosingPrice, Double changePrice, Double changeRate) {
         this.market = market;
         this.candleDateTimeUtc = candleDateTimeUtc;
         this.candleDateTimeKst = candleDateTimeKst;

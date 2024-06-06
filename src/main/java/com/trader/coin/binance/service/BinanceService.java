@@ -3,41 +3,46 @@ package com.trader.coin.binance.service;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.trader.coin.binance.service.dto.CandleResponse;
+import com.trader.coin.binance.service.dto.BinanceCandleResponse;
 import com.trader.coin.binance.service.dto.MarketResponse;
 import com.trader.coin.binance.service.dto.TickerResponse;
 import com.trader.coin.common.Tech.service.TechnicalIndicator;
-import com.trader.coin.common.infrastructure.ProfitPercentageRepository;
-import com.trader.coin.common.infrastructure.alert.discord.DiscordService;
+import com.trader.coin.common.domain.MATrendDirection;
 import com.trader.coin.common.infrastructure.config.APIProperties;
 import com.trader.coin.common.infrastructure.config.exception.BaseException;
 import com.trader.coin.common.infrastructure.config.exception.ErrorCode;
-import com.trader.coin.crypto.infrastructure.jwt.JwtTokenUtil;
+import com.trader.coin.common.service.dto.CandleData;
 import com.trader.coin.upbit.domain.CoinEvaluation;
-import com.trader.coin.upbit.presentation.dto.CoinInquiryResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.http.HttpEntity;
+import org.apache.http.HttpResponse;
+import org.apache.http.client.HttpClient;
+import org.apache.http.client.methods.HttpGet;
+import org.apache.http.impl.client.HttpClientBuilder;
+import org.apache.http.util.EntityUtils;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.reactive.function.client.ExchangeStrategies;
 import org.springframework.web.reactive.function.client.WebClient;
 
+import java.io.IOException;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 
+import static com.trader.coin.common.domain.MATrendDirection.GOLDEN_CROSS;
+
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class BinanceService {
-    private final ProfitPercentageRepository profitPercentageRepository;
 
     private final ObjectMapper objectMapper;
 
     private final APIProperties api;
-    private final JwtTokenUtil jwtTokenUtil;
-    private final DiscordService discordService;
     private final TechnicalIndicator technicalIndicator;
 
     public List<MarketResponse> getMarkets() {
@@ -64,24 +69,25 @@ public class BinanceService {
         return marketResponses;
     }
 
-    public List<CandleResponse> getCandles(String market) {
-        WebClient client = WebClient.create(api.getBinance().getServerUrl());
+    public List<CandleData> getCandles(String market) {
+        String serverUrl = api.isFutures() ? api.getBinance().getFuturesUrl() + "/fapi/v1/klines" :
+                api.getBinance().getServerUrl() + "/api/v3/klines";
+        WebClient client = WebClient.create(serverUrl);
 
         String responseBody = client.get()
                 .uri(uriBuilder -> uriBuilder
-                        .path("/api/v3/klines")
-                        .queryParam("symbol", market + "USDT")
+                        .queryParam("symbol", market)
                         .queryParam("interval", api.getBinance_INTERVAL())
                         .build())
                 .retrieve()
                 .bodyToMono(String.class)
                 .block();
 
-        List<CandleResponse> responseList = new ArrayList<>();
+        List<CandleData> responseList = new ArrayList<>();
         try {
             List<List<Object>> rawResponse = objectMapper.readValue(responseBody, new TypeReference<>() {});
             for (List<Object> rawData : rawResponse) {
-                responseList.add(new CandleResponse(rawData));
+                responseList.add(new BinanceCandleResponse(rawData));
             }
         } catch (JsonProcessingException e) {
             throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "응답 데이터 변환에 실패했습니다.");
@@ -90,81 +96,88 @@ public class BinanceService {
         return responseList;
     }
 
-//    @Transactional
-//    public void waitAndSeeOrderCoin() {
-//        List<CoinInquiryResponse> inquiries = getAccountInquiry();
-//        log.warn("업비트 {} 코인 매수 {}캔들 조건 평가 시작", getLocalDateTimeNow(), api.getUpbit_UNIT());
-//
-//        long KRW_balance = (long) Math.floor(inquiries.stream()
-//                .filter(inquiry -> inquiry.getCurrency().equals("KRW"))
-//                .mapToDouble(CoinInquiryResponse::getBalance)
-//                .findFirst()
-//                .orElseThrow(() -> new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "KRW 잔고 조회에 실패했습니다.")));
-//
-//        // 매수할 코인 평가
-//        List<CoinEvaluation> evaluations = evaluatePotentialBuys();
-//        if (evaluations.isEmpty()) {
-//            log.error("매수할 코인이 없습니다.");
-//            return;
-//        }
-//
-//        // 거래량이 높은 코인순으로 정렬 BID_PERCENTAGE
-//        List<CoinEvaluation> topEvaluations = generateListByAccTracePrice24H(evaluations);
-//        if (KRW_balance * api.getBID_PERCENTAGE() <= 5_000) {
-//            log.error("매수 금액이 5000원 이하이므로 매수하지 않습니다.");
-//            return;
-//        }
-//
-//        // 매수
-//        for (CoinEvaluation coin : topEvaluations) {
-//            String bidPrice = String.valueOf((long) (KRW_balance * api.getBID_PERCENTAGE()));
-////            orderCoin(new CoinOrderRequest(coin.getMarket(), "bid", null, bidPrice, "price"));
-//            log.info("market: {}, 가격: {} 매수", coin.getMarket(), bidPrice);
-//        }
-//
-//        delayMethod(1000);
-//    }
+    @Transactional
+    public void waitAndSeeOrderCoin() {
+        log.warn("바이낸스 {} 코인 매수 {}캔들 조건 평가 시작", getLocalDateTimeNow(), api.getBinance_INTERVAL());
 
-//    private List<CoinEvaluation> generateListByAccTracePrice24H(List<CoinEvaluation> evaluations) {
-//        evaluations.forEach(
-//                evaluation -> {
-//                    double accTradePrice24h = getTicker(evaluation.getMarket()).getAccTradePrice24h();
-//                    evaluation.initAccTradePrice24h(accTradePrice24h);
-//                    delayMethod(100);
-//                }
-//        );
-//        List<CoinEvaluation> sortedEvaluations = evaluations.stream()
-//                .sorted(Comparator.comparingDouble(CoinEvaluation::getAccTradePrice24h).reversed())
-//                .toList();
-//        sortedEvaluations.forEach(evaluation -> log.info("market: {}, 거래량: {}", evaluation.getMarket(), evaluation.getAccTradePrice24h()));
-//
-//        return sortedEvaluations.stream()
-//                .limit(api.getNUMBER_OF_BUY())
-//                .toList();
-//    }
-
-    public double getTicker() {
-        List<String> markets = List.of("BTCUSDT", "ETHUSDT");
-        WebClient client = WebClient.create(api.getBinance().getServerUrl());
-        for (String market : markets) {
-            String responseBody = client.get()
-                    .uri(uriBuilder -> uriBuilder
-                            .path("/api/v3/ticker/24hr")
-                            .queryParam("symbol", market + "USDT")
-                            .build())
-                    .retrieve()
-                    .bodyToMono(String.class)
-                    .block();
-
-            List<TickerResponse> responseList;
-            try {
-                responseList = objectMapper.readValue(responseBody, new TypeReference<>() {});
-            } catch (JsonProcessingException e) {
-                throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "응답 데이터 변환에 실패했습니다.");
-            }
-            System.out.println(responseList.get(0).getVolume());
+        // 매수할 코인 평가
+        List<CoinEvaluation> evaluations = evaluatePotentialBuys();
+        if (evaluations.isEmpty()) {
+            log.error("매수할 코인이 없습니다.");
+            return;
         }
-        return 0;
+
+        // 거래량이 높은 코인순으로 정렬 BID_PERCENTAGE
+        List<CoinEvaluation> topEvaluations = generateListByAccTracePrice24H(evaluations);
+        delayMethod(1000);
+    }
+
+    private List<CoinEvaluation> evaluatePotentialBuys() {
+        List<CoinEvaluation> evaluations = new ArrayList<>();
+        for (String market : api.getBUY_FUTURES()) {
+            List<CandleData> candles = getCandles(market);
+
+            long rsi = technicalIndicator.calculateRSI(candles, api.getRSI_PERIOD());
+            double[] bollingerBand = technicalIndicator.calculateBollingerBand(candles, api.getPERIOD());
+
+            // 매수 조건
+            // 볼린저 밴드 하단 범위 설정. 하단 돌파부터 근접
+//            double lowerBand = bollingerBand[1];
+//            double lowerBandNear = lowerBand * 1.05; // 볼린저 밴드 하단의 5% 위
+//            boolean isBandTrue = candles.get(0).getTradePrice() <= lowerBandNear && candles.get(0).getTradePrice() >= lowerBand;
+
+            double currentTradePrice = ((BinanceCandleResponse) candles.get(0)).getClosePrice();
+            boolean isPriceDown = currentTradePrice <= ((BinanceCandleResponse) candles.get(1)).getClosePrice() * 0.95;
+            boolean isBandTrue = currentTradePrice <= bollingerBand[1] && currentTradePrice < bollingerBand[0];
+            MATrendDirection goldenCross = technicalIndicator.isGoldenCross(candles);
+
+            if ((rsi < api.getRSI_BUYING_CONDITION() && isBandTrue && !isPriceDown) || (goldenCross == GOLDEN_CROSS && !(rsi > api.getRSI_SELLING_CONDITION()))) {
+                evaluations.add(new CoinEvaluation(market, rsi, currentTradePrice, bollingerBand));
+            }
+
+            delayMethod(300);
+        }
+
+        return evaluations;
+    }
+
+    private List<CoinEvaluation> generateListByAccTracePrice24H(List<CoinEvaluation> evaluations) {
+        evaluations.forEach(
+                evaluation -> {
+                    double accTradePrice24h = Double.parseDouble(getTicker(evaluation.getMarket()).getQuoteVolume());
+                    evaluation.initAccTradePrice24h(accTradePrice24h);
+                    delayMethod(100);
+                }
+        );
+        List<CoinEvaluation> sortedEvaluations = evaluations.stream()
+                .sorted(Comparator.comparingDouble(CoinEvaluation::getAccTradePrice24h).reversed())
+                .toList();
+        sortedEvaluations.forEach(evaluation -> log.info("market: {}, 거래량: {}", evaluation.getMarket(), evaluation.getAccTradePrice24h()));
+
+        return sortedEvaluations.stream()
+                .limit(api.getNUMBER_OF_BUY())
+                .toList();
+    }
+
+    public TickerResponse getTicker(String market) {
+        String serverUrl = api.isFutures() ? api.getBinance().getFuturesUrl() + "/fapi/v1/ticker/24hr?symbol=" :
+                api.getBinance().getServerUrl() + "/api/v3/ticker/24hr?symbol=";
+        HttpClient client = HttpClientBuilder.create().build();
+
+        HttpGet request = new HttpGet(serverUrl + market);
+        request.setHeader("Content-Type", "application/json");
+
+        TickerResponse ticker;
+        try {
+            HttpResponse response = client.execute(request);
+            HttpEntity entity = response.getEntity();
+            String message = EntityUtils.toString(entity, "UTF-8");
+            ticker = objectMapper.readValue(message, new TypeReference<>() {});
+        } catch (IOException e) {
+            throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "응답 데이터 변환에 실패했습니다.");
+        }
+
+        return ticker;
     }
 
     private void delayMethod(int millis) {

@@ -1,23 +1,27 @@
 package com.trader.coin.binance.service.dto;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
-import lombok.Builder;
+import com.trader.coin.common.service.dto.CandleData;
 import lombok.Getter;
+import lombok.NoArgsConstructor;
 
 import java.util.List;
 
+import static lombok.AccessLevel.PROTECTED;
+
 @Getter
-public class CandleResponse {
+@NoArgsConstructor
+public class BinanceCandleResponse extends CandleData {
     @JsonProperty("Klineopentime")
     public Long KlineOpenTime;
     @JsonProperty("OpenPrice")
-    public String OpenPrice;
+    public Double OpenPrice;
     @JsonProperty("Highprice")
-    public String HighPrice;
+    public Double HighPrice;
     @JsonProperty("Lowprice")
-    public String LowPrice;
+    public Double LowPrice;
     @JsonProperty("Closeprice")
-    public String ClosePrice;
+    public Double ClosePrice;
     @JsonProperty("Volume")
     public String Volume;
     @JsonProperty("Klineclosetime")
@@ -33,13 +37,13 @@ public class CandleResponse {
     @JsonProperty("Ignore")
     public String Ignore;
 
-    public CandleResponse(List<Object> candleData) {
+    public BinanceCandleResponse(List<Object> candleData) {
         if (candleData != null && candleData.size() >= 12) {
             this.KlineOpenTime = (Long) candleData.get(0);
-            this.OpenPrice = (String) candleData.get(1);
-            this.HighPrice = (String) candleData.get(2);
-            this.LowPrice = (String) candleData.get(3);
-            this.ClosePrice = (String) candleData.get(4);
+            this.OpenPrice = Double.parseDouble((String) candleData.get(1));
+            this.HighPrice = Double.parseDouble((String) candleData.get(2));
+            this.LowPrice = Double.parseDouble((String) candleData.get(3));
+            this.ClosePrice = Double.parseDouble((String) candleData.get(4));
             this.Volume = (String) candleData.get(5);
             this.KlineCloseTime = (Long) candleData.get(6);
             this.QuoteAssetVolume = (String) candleData.get(7);

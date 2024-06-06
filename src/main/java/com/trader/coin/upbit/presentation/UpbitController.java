@@ -1,9 +1,9 @@
 package com.trader.coin.upbit.presentation;
 
+import com.trader.coin.common.service.dto.CandleData;
 import com.trader.coin.upbit.presentation.dto.CoinInquiryResponse;
 import com.trader.coin.upbit.presentation.dto.CoinOrderRequest;
 import com.trader.coin.upbit.service.UpbitService;
-import com.trader.coin.upbit.service.dto.CandleResponse;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import lombok.RequiredArgsConstructor;
@@ -25,11 +25,10 @@ public class UpbitController {
     }
 
     @GetMapping("/candles/{unit}")
-    public ResponseEntity<List<CandleResponse>> getCandles(@PathVariable(value = "unit") String unit,
-                                                           @NotNull @RequestParam(value = "market") String market,
-                                                           @NotNull @RequestParam(value = "count") int count) {
-        List<CandleResponse> candles = upbitService.getCandles(unit, market, count);
-        return ResponseEntity.status(HttpStatus.OK).body(candles);
+    public ResponseEntity<List<CandleData>> getCandles(@PathVariable(value = "unit") String unit,
+                                                       @NotNull @RequestParam(value = "market") String market,
+                                                       @NotNull @RequestParam(value = "count") int count) {
+        return ResponseEntity.status(HttpStatus.OK).body(upbitService.getCandles(unit, market, count));
     }
 
     @GetMapping("/my-inquiry")

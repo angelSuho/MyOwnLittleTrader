@@ -1,5 +1,6 @@
 package com.trader.coin.common.infrastructure.config;
 
+import com.trader.coin.common.domain.Market;
 import lombok.Getter;
 import lombok.Setter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
@@ -13,17 +14,23 @@ public class APIProperties {
     private api binance;
 
     // 매수하지 않을 코인 리스트
-    private final List<String> COIN_NOT_BUY = List.of(
+    private final List<String> NO_BUY = List.of(
             "KRW-TRX", "KRW-XRP", "KRW-WAXP", "KRW-WAVES", "KRW-MTL"
     );
     // 매도하지 않을 코인 리스트
-    private final List<String> COIN_NOT_SELL = List.of(
+    private final List<String> NO_SELL = List.of(
             "KRW-BTC", "KRW-ETH"
     );
+    // 선물 거래할 코인 리스트
+    private final List<String> BUY_FUTURES = List.of(
+            "BTCUSDT", "ETHUSDT", "BCHUSDT", "SOLUSDT", "1000PEPEUSDT", "ETCUSDT",
+            "DOGEUSDT"
+    );
 
-    private final String crypto_market = "upbit";
+    private final boolean isFutures = true;
+    private final Market crypto_market = Market.BINANCE;
     private final String upbit_UNIT = "240";  // days or minutes(1, 3, 5, 15, 30, 60, 240)
-    private final String binance_INTERVAL = "1h";  // 15m, 30, 1h, 4h, 1d
+    private final String binance_INTERVAL = "15m";  // 15m, 30m, 1h, 4h, 1d
     private final int PERIOD = 20;
     private final double BID_PERCENTAGE = 0.25;
     private final int CANDLE_COUNT = 200;
@@ -43,5 +50,6 @@ public class APIProperties {
         protected String accessKey;
         protected String secretKey;
         protected String serverUrl;
+        protected String futuresUrl;
     }
 }

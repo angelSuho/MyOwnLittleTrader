@@ -6,18 +6,19 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.gson.Gson;
 import com.trader.coin.common.Tech.service.TechnicalIndicator;
 import com.trader.coin.common.domain.MATrendDirection;
+import com.trader.coin.common.infrastructure.ProfitPercentageRepository;
 import com.trader.coin.common.infrastructure.alert.discord.DiscordService;
+import com.trader.coin.common.infrastructure.config.APIProperties;
 import com.trader.coin.common.infrastructure.config.exception.BaseException;
 import com.trader.coin.common.infrastructure.config.exception.ErrorCode;
+import com.trader.coin.common.service.dto.CandleData;
 import com.trader.coin.crypto.infrastructure.jwt.JwtTokenUtil;
 import com.trader.coin.upbit.domain.CoinEvaluation;
 import com.trader.coin.upbit.domain.ProfitPercentage;
-import com.trader.coin.common.infrastructure.ProfitPercentageRepository;
-import com.trader.coin.common.infrastructure.config.APIProperties;
 import com.trader.coin.upbit.presentation.dto.CoinInquiryResponse;
 import com.trader.coin.upbit.presentation.dto.CoinOrderRequest;
-import com.trader.coin.upbit.service.dto.CandleResponse;
 import com.trader.coin.upbit.service.dto.TickerResponse;
+import com.trader.coin.upbit.service.dto.UpbitCandleResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.http.HttpEntity;
@@ -71,7 +72,7 @@ public class UpbitService {
         return responseList.stream().map(map -> map.get("market")).toList();
     }
 
-    public List<CandleResponse> getCandles(String unit, String market, int count) {
+    public List<CandleData> getCandles(String unit, String market, int count) {
         WebClient client = WebClient.create(api.getUpbit().getServerUrl());
         String path = Objects.equals(unit, "days") ? "/days" : "/minutes/" + unit;
 
@@ -85,7 +86,7 @@ public class UpbitService {
                 .bodyToMono(String.class)
                 .block();
 
-        List<CandleResponse> responseList;
+        List<CandleData> responseList;
         try {
             responseList = objectMapper.readValue(responseBody, new TypeReference<>() {});
         } catch (JsonProcessingException e) {
@@ -122,7 +123,7 @@ public class UpbitService {
     public void waitAndSeeOrderCoin() {
         List<CoinInquiryResponse> inquiries = getAccountInquiry();
         log.warn("업비트 {} 코인 매수 {}캔들 조건 평가 시작", getLocalDateTimeNow(), api.getUpbit_UNIT());
-        
+
         long KRW_balance = (long) Math.floor(inquiries.stream()
                 .filter(inquiry -> inquiry.getCurrency().equals("KRW"))
                 .mapToDouble(CoinInquiryResponse::getBalance)
@@ -166,14 +167,15 @@ public class UpbitService {
         List<ProfitPercentage> profitPercentages = arrangeProfit(inquiries);
         for (CoinInquiryResponse inquiry : inquiries) {
             String market = inquiry.getUnitCurrency() + "-" + inquiry.getCurrency();
-            if (inquiry.getCurrency().equals("KRW") || api.getCOIN_NOT_SELL().contains(market)) {
+            if (inquiry.getCurrency().equals("KRW") || api.getNO_SELL().contains(market)) {
                 continue;
             }
-            List<CandleResponse> candles = getCandles(api.getUpbit_UNIT(), market, api.getCANDLE_COUNT());
+            List<CandleData> candles = getCandles(api.getUpbit_UNIT(), market, api.getCANDLE_COUNT());
 
-            long rsi = technicalIndicator.calculateUpbitRSI(candles, api.getRSI_PERIOD());
+//            long rsi = technicalIndicator.calculateRSI(candles, api.getRSI_PERIOD());
+            double rsi = 0;
             double[] bollingerBands = technicalIndicator.calculateBollingerBand(candles, api.getPERIOD());
-            double currentMarketPrice = candles.get(0).getTradePrice();
+            double currentMarketPrice = ((UpbitCandleResponse) candles.get(0)).getTradePrice();
             double avgBuyPrice = inquiry.getAvgBuyPrice();
             double profitAndLossPercentage = (currentMarketPrice - avgBuyPrice) / avgBuyPrice * 100;
 
@@ -186,15 +188,17 @@ public class UpbitService {
             // 현재 손익률이 -3% 이하인지 확인합니다.
             boolean isLossGreaterThan3Percent = profitAndLossPercentage <= api.getSTOP_LOSS_LINE();
             // 현재 추세가 상승 추세 인지 확인합니다.
-            List<Double> priceList = candles.stream().map(CandleResponse::getTradePrice).toList();
+            List<Double> priceList = candles.stream()
+                    .map(candle -> ((UpbitCandleResponse) candle).getTradePrice())  // 명시적 형변환
+                    .toList();
             boolean trendingUp = technicalIndicator.isTrendingUp(priceList, 3);
 
             // 매도 조건
-            if ((rsi >= api.getRSI_SELLING_CONDITION() && candles.get(0).getTradePrice() > bollingerBands[0])
+            if ((rsi >= api.getRSI_SELLING_CONDITION() && ((UpbitCandleResponse) candles.get(0)).getTradePrice() > bollingerBands[0])
                     || isLossGreaterThan3Percent || ((hasDroppedFromNProfit && !trendingUp) || hasDroppedFromMAXNProfit)) {
                 orderCoin(new CoinOrderRequest(market, "ask", String.valueOf(inquiry.getBalance()), null, "market"));
                 profitPercentageRepository.deleteByMarket(market);
-                discordService.sendDiscordAlertLog(market, String.valueOf(candles.get(0).getTradePrice()),
+                discordService.sendDiscordAlertLog(market, String.valueOf(((UpbitCandleResponse) candles.get(0)).getTradePrice()),
                         String.valueOf(inquiry.getBalance()), "ask");
                 log.info("market: {}, RSI: {}, 볼린저밴드 상단: {}, 볼린저밴드 하단: {}, 손익률: {}%",
                         market,
@@ -211,7 +215,7 @@ public class UpbitService {
                         bollingerBands[1],
                         String.format("%.2f%%", profitAndLossPercentage));
 
-                if (!api.getCOIN_NOT_SELL().contains(market)) log.info("매도 조건이 충족되지 않아 매도하지 않습니다.");
+                if (!api.getNO_SELL().contains(market)) log.info("매도 조건이 충족되지 않아 매도하지 않습니다.");
             }
         }
 
@@ -334,16 +338,17 @@ public class UpbitService {
     private List<CoinEvaluation> evaluatePotentialBuys() {
         List<CoinEvaluation> evaluations = new ArrayList<>();
         for (String market : findMarkets()) {
-            if (!market.contains("KRW") || api.getCOIN_NOT_BUY().contains(market)) {
+            if (!market.contains("KRW") || api.getNO_BUY().contains(market)) {
                 continue;
             }
 
-            List<CandleResponse> candles = getCandles(api.getUpbit_UNIT(), market, api.getCANDLE_COUNT());
+            List<CandleData> candles = getCandles(api.getUpbit_UNIT(), market, api.getCANDLE_COUNT());
             if (candles.size() < api.getCANDLE_COUNT()) {
                 continue;
             }
 
-            long rsi = technicalIndicator.calculateUpbitRSI(candles, api.getRSI_PERIOD());
+//            long rsi = technicalIndicator.calculateRSI(candles, api.getRSI_PERIOD());
+            long rsi = 0;
             double[] bollingerBand = technicalIndicator.calculateBollingerBand(candles, api.getPERIOD());
 
             // 매수 조건
@@ -352,8 +357,8 @@ public class UpbitService {
 //            double lowerBandNear = lowerBand * 1.05; // 볼린저 밴드 하단의 5% 위
 //            boolean isBandTrue = candles.get(0).getTradePrice() <= lowerBandNear && candles.get(0).getTradePrice() >= lowerBand;
 
-            double currentTradePrice = candles.get(0).getTradePrice();
-            boolean isPriceDown = currentTradePrice <= candles.get(1).getTradePrice() * 0.95;
+            double currentTradePrice = ((UpbitCandleResponse) candles.get(0)).getTradePrice();
+            boolean isPriceDown = currentTradePrice <= ((UpbitCandleResponse) candles.get(1)).getTradePrice() * 0.95;
             boolean isBandTrue = currentTradePrice <= bollingerBand[1] && currentTradePrice < bollingerBand[0];
             MATrendDirection goldenCross = technicalIndicator.isGoldenCross(candles);
 

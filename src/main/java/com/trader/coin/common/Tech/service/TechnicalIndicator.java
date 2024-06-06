@@ -1,23 +1,39 @@
 package com.trader.coin.common.Tech.service;
 
+import com.trader.coin.binance.service.dto.BinanceCandleResponse;
 import com.trader.coin.common.domain.MATrendDirection;
+import com.trader.coin.common.domain.Market;
+import com.trader.coin.common.infrastructure.config.APIProperties;
 import com.trader.coin.common.infrastructure.config.exception.BaseException;
 import com.trader.coin.common.infrastructure.config.exception.ErrorCode;
-import com.trader.coin.upbit.service.dto.CandleResponse;
+import com.trader.coin.common.service.dto.CandleData;
+import com.trader.coin.upbit.service.dto.UpbitCandleResponse;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 
 @Component
+@RequiredArgsConstructor
 public class TechnicalIndicator {
-    public List<Double> calculateSMAList(List<CandleResponse> candles, int period) {
+    private final APIProperties api;
+
+    public List<Double> calculateSMAList(List<? extends CandleData> candles, int period) {
+
         List<Double> movingAverages = new ArrayList<>();
         for (int i = period - 1; i < candles.size(); i++) {
             double sum = 0;
             for (int j = i - (period - 1); j <= i; j++) {
-                sum += candles.get(j).getTradePrice();
+                if (candles.get(j) instanceof BinanceCandleResponse) {
+                    sum += ((BinanceCandleResponse) candles.get(j)).getClosePrice();
+                } else if (candles.get(j) instanceof UpbitCandleResponse) {
+                    sum += ((UpbitCandleResponse) candles.get(j)).getTradePrice();
+                }
             }
             movingAverages.add(sum / period);
         }
@@ -33,7 +49,7 @@ public class TechnicalIndicator {
         return true;
     }
 
-    public MATrendDirection isGoldenCross(List<CandleResponse> candles) {
+    public MATrendDirection isGoldenCross(List<CandleData> candles) {
         List<Double> MA15 = calculateSMAList(candles, 15);
         List<Double> MA50 = calculateSMAList(candles, 50);
         List<Double> bandMiddleLineList = calculateBollingerBandMiddleLineList(candles, 20);
@@ -53,15 +69,19 @@ public class TechnicalIndicator {
         }
     }
 
-    public double calculateSMA(List<CandleResponse> candles, int period) {
+    public double calculateSMA(List<CandleData> candles, int period) {
         double sum = 0;
         for (int i = 0; i < period; i++) {
-            sum += candles.get(i).getTradePrice();
+            if (candles.get(i) instanceof BinanceCandleResponse) {
+                sum += ((BinanceCandleResponse) candles.get(i)).getClosePrice();
+            } else if (candles.get(i) instanceof UpbitCandleResponse) {
+                sum += ((UpbitCandleResponse) candles.get(i)).getTradePrice();
+            }
         }
         return sum / period;
     }
 
-    public double calculateEMA(List<CandleResponse> values, int period) {
+    public double calculateEMA(List<UpbitCandleResponse> values, int period) {
         double a = 2.0 / (period + 1);
         double ema = values.get(0).getTradePrice(); // starting with the first value
 
@@ -72,24 +92,38 @@ public class TechnicalIndicator {
         return ema;
     }
 
-    public double calculateStandardDeviation(List<CandleResponse> candles, double sma, int period) {
+    public double calculateStandardDeviation(List<CandleData> candles, double sma, int period) {
         double variance = 0.0;
         for (int i = 0; i < period; i++) {
-            variance += Math.pow(candles.get(i).getTradePrice() - sma, 2);
+            if (candles.get(i) instanceof BinanceCandleResponse) {
+                variance += Math.pow(((BinanceCandleResponse) candles.get(i)).getClosePrice() - sma, 2);
+            } else if (candles.get(i) instanceof UpbitCandleResponse) {
+                variance += Math.pow(((UpbitCandleResponse) candles.get(i)).getTradePrice() - sma, 2);
+            }
         }
         return Math.sqrt(variance / period);
     }
 
-    public long  calculateUpbitRSI(List<CandleResponse> candles, int period) {
-        candles = candles.stream()
-                .sorted(Comparator.comparing(CandleResponse::getTimestamp))
-                .toList();
+    public long calculateRSI(List<CandleData> candles, int period) {
+        List<? extends CandleData> candleList = candles;
+        if (candles.get(0) instanceof BinanceCandleResponse) {
+            candleList = candles.stream()
+                    .map(candle -> (BinanceCandleResponse) candle)  // 명시적 형변환
+                    .sorted(Comparator.comparing(BinanceCandleResponse::getKlineOpenTime))
+                    .toList();
+        } else if (candles.get(0) instanceof UpbitCandleResponse) {
+            candleList = candles.stream()
+                    .map(candle -> (UpbitCandleResponse) candle)  // 명시적 형변환
+                    .sorted(Comparator.comparing(UpbitCandleResponse::getTimestamp))
+                    .toList();
+        }
 
         double zero = 0;
         List<Double> upList = new ArrayList<>();
         List<Double> downList = new ArrayList<>();
         for (int i = 0; i < candles.size() - 1; i++) {
-            double gapByTradePrice = candles.get(i + 1).getTradePrice() - candles.get(i).getTradePrice();
+            double gapByTradePrice = getGapByTradePrice(candles, i, candleList);
+
             if (gapByTradePrice > 0) {
                 upList.add(gapByTradePrice);
                 downList.add(zero);
@@ -130,7 +164,7 @@ public class TechnicalIndicator {
         return (long) Math.floor(100 - (100 / (1 + rs)));
     }
 
-    public double[] calculateBollingerBand(List<CandleResponse> candles, int period) {
+    public double[] calculateBollingerBand(List<CandleData> candles, int period) {
         double sma = calculateSMA(candles, period);
         double standardDeviation = calculateStandardDeviation(candles, sma, period);
         double upperBand = sma + 2 * standardDeviation;
@@ -138,17 +172,17 @@ public class TechnicalIndicator {
         return new double[]{upperBand, lowerBand, sma};
     }
 
-    public List<Double> calculateBollingerBandMiddleLineList(List<CandleResponse> candles, int period) {
+    public List<Double> calculateBollingerBandMiddleLineList(List<CandleData> candles, int period) {
         List<Double> middleLines = new ArrayList<>();
         for (int i = 0; i <= candles.size() - period; i++) {
-            List<CandleResponse> subList = candles.subList(i, i + period);
+            List<CandleData> subList = candles.subList(i, i + period);
             double sma = calculateSMA(subList, period); // 이미 선언된 메소드 사용
             middleLines.add(sma); // 계산된 SMA 값을 반올림하여 long 타입으로 변환 후 추가
         }
         return middleLines;
     }
 
-    public boolean isCandleRising(List<CandleResponse> candles, int n) {
+    public boolean isCandleRising(List<UpbitCandleResponse> candles, int n) {
         if (candles.size() < 2) {
             return false;
         }
@@ -158,6 +192,18 @@ public class TechnicalIndicator {
             }
         }
         return true;
+    }
+
+    private static double getGapByTradePrice(List<CandleData> candles, int i, List<? extends CandleData> candleList) {
+        double gapByTradePrice;
+        if (candles.get(i) instanceof BinanceCandleResponse)
+            gapByTradePrice = ((BinanceCandleResponse) candleList.get(i + 1)).getClosePrice() - ((BinanceCandleResponse) candleList.get(i)).getClosePrice();
+        else if (candles.get(i) instanceof UpbitCandleResponse)
+            gapByTradePrice = ((UpbitCandleResponse) candleList.get(i + 1)).getTradePrice() - ((UpbitCandleResponse) candleList.get(i)).getTradePrice();
+        else {
+            throw new BaseException(ErrorCode.BAD_REQUEST, "Candle type is not supported");
+        }
+        return gapByTradePrice;
     }
 
     private boolean isPriceDifferenceOverNPercent(double highPrice, double lowPrice, int n) {
