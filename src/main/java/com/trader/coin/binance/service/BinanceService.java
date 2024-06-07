@@ -33,6 +33,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 
+import static com.trader.coin.common.domain.MATrendDirection.*;
 import static com.trader.coin.common.domain.MATrendDirection.GOLDEN_CROSS;
 
 @Slf4j
@@ -131,7 +132,15 @@ public class BinanceService {
             boolean isBandTrue = currentTradePrice <= bollingerBand[1] && currentTradePrice < bollingerBand[0];
             MATrendDirection goldenCross = technicalIndicator.isGoldenCross(candles);
 
-            if ((rsi < api.getRSI_BUYING_CONDITION() && isBandTrue && !isPriceDown) || (goldenCross == GOLDEN_CROSS && !(rsi > api.getRSI_SELLING_CONDITION()))) {
+            if ((rsi < api.getRSI_BUYING_CONDITION() && isBandTrue && !isPriceDown) ||
+                    (goldenCross == GOLDEN_CROSS && !(rsi > api.getRSI_SELLING_CONDITION()))) {
+                log.info("롱 매수 조건 만족: {}, RSI: {}, 볼린저 밴드: {}, 현재가: {}", market, rsi, bollingerBand, currentTradePrice);
+                evaluations.add(new CoinEvaluation(market, rsi, currentTradePrice, bollingerBand));
+            }
+
+            // calculate short position
+            if (rsi <= api.getRSI_SELLING_CONDITION() || goldenCross == DEATH_CROSS && rsi  > api.getRSI_BUYING_CONDITION()) {
+                log.info("숏 매수 조건 만족: {}, RSI: {}, 볼린저 밴드: {}, 현재가: {}", market, rsi, bollingerBand, currentTradePrice);
                 evaluations.add(new CoinEvaluation(market, rsi, currentTradePrice, bollingerBand));
             }
 
