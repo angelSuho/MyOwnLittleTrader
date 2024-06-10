@@ -90,6 +90,9 @@ public class BinanceService {
             for (List<Object> rawData : rawResponse) {
                 responseList.add(new BinanceCandleResponse(rawData));
             }
+            responseList = responseList.stream()
+                    .sorted((o1, o2) -> Long.compare(((BinanceCandleResponse) o2).getKlineCloseTime(), ((BinanceCandleResponse) o1).getKlineCloseTime()))
+                    .toList();
         } catch (JsonProcessingException e) {
             throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "응답 데이터 변환에 실패했습니다.");
         }
@@ -111,6 +114,7 @@ public class BinanceService {
         // 거래량이 높은 코인순으로 정렬 BID_PERCENTAGE
         List<CoinEvaluation> topEvaluations = generateListByAccTracePrice24H(evaluations);
         delayMethod(1000);
+        log.warn("평가 종료");
     }
 
     private List<CoinEvaluation> evaluatePotentialBuys() {
@@ -139,7 +143,7 @@ public class BinanceService {
             }
 
             // calculate short position
-            if (rsi <= api.getRSI_SELLING_CONDITION() || goldenCross == DEATH_CROSS && rsi  > api.getRSI_BUYING_CONDITION()) {
+            if (goldenCross == DEATH_CROSS && rsi  > api.getRSI_BUYING_CONDITION()) {
                 log.info("숏 매수 조건 만족: {}, RSI: {}, 볼린저 밴드: {}, 현재가: {}", market, rsi, bollingerBand, currentTradePrice);
                 evaluations.add(new CoinEvaluation(market, rsi, currentTradePrice, bollingerBand));
             }

@@ -24,8 +24,6 @@ public class TechnicalIndicator {
     private final APIProperties api;
 
     public List<Double> calculateSMAList(List<? extends CandleData> candles, int period) {
-        // sort candle
-        candles.stream().sorted()
         List<Double> movingAverages = new ArrayList<>();
         for (int i = period - 1; i < candles.size(); i++) {
             double sum = 0;
@@ -72,16 +70,12 @@ public class TechnicalIndicator {
         boolean is15maTrendingUp = isTrendingUp(MA15, 3);
         boolean is15maCrossedMiddleLine = MA15.get(0) > bandMiddleLineList.get(0) && MA15.get(1) <= bandMiddleLineList.get(1);
 
-        System.out.println(MA15.get(0) + " " + MA50.get(0));
-        System.out.println(MA15.get(1) + " " + MA50.get(1));
         boolean isDeadCross = MA15.get(0) < MA50.get(0) && MA15.get(1) >= MA50.get(1);
         boolean isTrendingDown = isTrendingDown(MA15, 3);
 
-        System.out.println("isDeadCross: " + isDeadCross);
-        System.out.println("isTrendingDown: " + isTrendingDown);
         if (hasCrossed && is15maTrendingUp || is15maCrossedMiddleLine) {
             return MATrendDirection.GOLDEN_CROSS;
-        } else if (isDeadCross && isTrendingDown) {
+        } else if (!isDeadCross && isTrendingDown) {
             return MATrendDirection.DEATH_CROSS;
         } else {
             return MATrendDirection.FLAT;
