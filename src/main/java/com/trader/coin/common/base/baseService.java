@@ -23,6 +23,7 @@ public class baseService implements ApplicationRunner {
             binanceService.waitAndSeeOrderCoin();
         } else {
             upbitService.calculateProfitPercentage();
+            upbitService.evaluateHoldingsForSell();
             upbitService.waitAndSeeOrderCoin();
         }
     }

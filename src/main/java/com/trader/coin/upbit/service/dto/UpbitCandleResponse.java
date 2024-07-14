@@ -5,6 +5,9 @@ import com.trader.coin.common.service.dto.CandleData;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
+import java.util.LinkedHashMap;
+import java.util.Objects;
+
 import static lombok.AccessLevel.*;
 
 @Getter
@@ -70,5 +73,21 @@ public class UpbitCandleResponse extends CandleData {
         this.prevClosingPrice = prevClosingPrice;
         this.changePrice = changePrice;
         this.changeRate = changeRate;
+    }
+
+    public UpbitCandleResponse(LinkedHashMap<String, Object> linkedHashMap) {
+        this.market = (String) linkedHashMap.get("market");
+        this.candleDateTimeUtc = (String) linkedHashMap.get("candle_date_time_utc");
+        this.candleDateTimeKst = (String) linkedHashMap.get("candle_date_time_kst");
+        this.openingPrice = (double) linkedHashMap.get("opening_price");
+        this.highPrice = (double) linkedHashMap.get("high_price");
+        this.lowPrice = (double) linkedHashMap.get("low_price");
+        this.tradePrice = (double) linkedHashMap.get("trade_price");
+        this.timestamp = (long) linkedHashMap.get("timestamp");
+        this.candleAccTradePrice = (double) linkedHashMap.get("candle_acc_trade_price");
+        this.candleAccTradeVolume = (double) linkedHashMap.get("candle_acc_trade_volume");
+        this.prevClosingPrice = (Double) linkedHashMap.get("prev_closing_price");
+        this.changePrice = (Double) linkedHashMap.get("change_price");
+        this.changeRate = (Double) linkedHashMap.get("change_rate");
     }
 }

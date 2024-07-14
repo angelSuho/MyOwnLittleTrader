@@ -1,5 +1,6 @@
 package com.trader.coin.common.Tech.service;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.trader.coin.binance.service.dto.BinanceCandleResponse;
 import com.trader.coin.common.domain.MATrendDirection;
 import com.trader.coin.common.domain.Market;
@@ -11,9 +12,6 @@ import com.trader.coin.upbit.service.dto.UpbitCandleResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
-import java.time.Instant;
-import java.time.LocalDateTime;
-import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -22,6 +20,7 @@ import java.util.List;
 @RequiredArgsConstructor
 public class TechnicalIndicator {
     private final APIProperties api;
+    private final ObjectMapper objectMapper;
 
     public List<Double> calculateSMAList(List<? extends CandleData> candles, int period) {
         List<Double> movingAverages = new ArrayList<>();
@@ -94,12 +93,30 @@ public class TechnicalIndicator {
         return sum / period;
     }
 
-    public double calculateEMA(List<UpbitCandleResponse> values, int period) {
+    public Double calculateEMA(List<CandleData> candles, int period) {
         double a = 2.0 / (period + 1);
-        double ema = values.get(0).getTradePrice(); // starting with the first value
+        Double ema = null;
+        if (api.getCrypto_market().equals(Market.BINANCE)) {
+            ema = ((BinanceCandleResponse) candles.get(candles.size()-1)).getClosePrice(); //starting with the first value
+        } else if (api.getCrypto_market().equals(Market.UPBIT)) {
+            UpbitCandleResponse upbitCandleResponse = objectMapper.convertValue(candles.get(0), UpbitCandleResponse.class);
+            ema =  upbitCandleResponse.getTradePrice();
+        }
 
-        for (int i = 1; i < values.size(); i++) {
-            ema = ((values.get(i).getTradePrice() - ema) * a) + ema;
+        for (int i = 1; i < candles.size(); i++) {
+            Double currentPrice = null;
+            if (api.getCrypto_market().equals(Market.BINANCE)) {
+                currentPrice = ((BinanceCandleResponse) candles.get(candles.size()-1-i)).getClosePrice(); //starting with the first value
+            } else if (api.getCrypto_market().equals(Market.UPBIT)) {
+                UpbitCandleResponse upbitCandleResponse = objectMapper.convertValue(candles.get(0), UpbitCandleResponse.class);
+                currentPrice =  upbitCandleResponse.getTradePrice();
+            }
+
+            if (currentPrice == null || ema == null) {
+                throw new BaseException(ErrorCode.BAD_REQUEST, "there is no candle data");
+            }
+
+            ema = ((currentPrice - ema) * a) + ema;
         }
 
         return ema;
@@ -178,7 +195,7 @@ public class TechnicalIndicator {
     }
 
     public double[] calculateBollingerBand(List<CandleData> candles, int period) {
-        double sma = calculateSMA(candles, period);
+        double sma = calculateEMA(candles, period);
         double standardDeviation = calculateStandardDeviation(candles, sma, period);
         double upperBand = sma + 2 * standardDeviation;
         double lowerBand = sma - 2 * standardDeviation;

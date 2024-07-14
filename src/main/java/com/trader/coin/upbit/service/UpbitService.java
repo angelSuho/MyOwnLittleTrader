@@ -4,8 +4,10 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.gson.Gson;
+import com.trader.coin.binance.service.dto.BinanceCandleResponse;
 import com.trader.coin.common.Tech.service.TechnicalIndicator;
 import com.trader.coin.common.domain.MATrendDirection;
+import com.trader.coin.common.domain.Market;
 import com.trader.coin.common.infrastructure.ProfitPercentageRepository;
 import com.trader.coin.common.infrastructure.alert.discord.DiscordService;
 import com.trader.coin.common.infrastructure.config.APIProperties;
@@ -86,14 +88,22 @@ public class UpbitService {
                 .bodyToMono(String.class)
                 .block();
 
-        List<CandleData> responseList;
-        try {
-            responseList = objectMapper.readValue(responseBody, new TypeReference<>() {});
-        } catch (JsonProcessingException e) {
-            throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "응답 데이터 변환에 실패했습니다.");
+        List<? extends CandleData> responses;
+        if (api.getCrypto_market().equals(Market.BINANCE)) {
+            try {
+                responses = objectMapper.readValue(responseBody, new TypeReference<List<BinanceCandleResponse>>() {});
+            } catch (JsonProcessingException e) {
+                throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "응답 데이터 변환에 실패했습니다.");
+            }
+        } else {
+            try {
+                responses = objectMapper.readValue(responseBody, new TypeReference<List<UpbitCandleResponse>>() {});
+            } catch (JsonProcessingException e) {
+                throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "응답 데이터 변환에 실패했습니다.");
+            }
         }
 
-        return responseList;
+        return new ArrayList<>(responses); // 타입 안전성을 보장하면서 반환
     }
 
     public List<CoinInquiryResponse> getAccountInquiry() {
@@ -147,7 +157,7 @@ public class UpbitService {
         // 매수
         for (CoinEvaluation coin : topEvaluations) {
             String bidPrice = String.valueOf((long) (KRW_balance * api.getBID_PERCENTAGE()));
-//            orderCoin(new CoinOrderRequest(coin.getMarket(), "bid", null, bidPrice, "price"));
+            orderCoin(new CoinOrderRequest(coin.getMarket(), "bid", null, bidPrice, "price"));
             log.info("market: {}, 가격: {} 매수", coin.getMarket(), bidPrice);
         }
 
@@ -175,7 +185,8 @@ public class UpbitService {
 //            long rsi = technicalIndicator.calculateRSI(candles, api.getRSI_PERIOD());
             double rsi = 0;
             double[] bollingerBands = technicalIndicator.calculateBollingerBand(candles, api.getPERIOD());
-            double currentMarketPrice = ((UpbitCandleResponse) candles.get(0)).getTradePrice();
+            UpbitCandleResponse upbitCandleResponse = objectMapper.convertValue(candles.get(0), UpbitCandleResponse.class);
+            double currentMarketPrice = upbitCandleResponse.getTradePrice();
             double avgBuyPrice = inquiry.getAvgBuyPrice();
             double profitAndLossPercentage = (currentMarketPrice - avgBuyPrice) / avgBuyPrice * 100;
 
@@ -189,7 +200,7 @@ public class UpbitService {
             boolean isLossGreaterThan3Percent = profitAndLossPercentage <= api.getSTOP_LOSS_LINE();
             // 현재 추세가 상승 추세 인지 확인합니다.
             List<Double> priceList = candles.stream()
-                    .map(candle -> ((UpbitCandleResponse) candle).getTradePrice())  // 명시적 형변환
+                    .map(candle -> (objectMapper.convertValue(candle, UpbitCandleResponse.class)).getTradePrice())  // 명시적 형변환
                     .toList();
             boolean trendingUp = technicalIndicator.isTrendingUp(priceList, 3);
 
@@ -346,6 +357,7 @@ public class UpbitService {
             if (candles.size() < api.getCANDLE_COUNT()) {
                 continue;
             }
+            delayMethod(100);
 
 //            long rsi = technicalIndicator.calculateRSI(candles, api.getRSI_PERIOD());
             long rsi = 0;
@@ -356,9 +368,10 @@ public class UpbitService {
 //            double lowerBand = bollingerBand[1];
 //            double lowerBandNear = lowerBand * 1.05; // 볼린저 밴드 하단의 5% 위
 //            boolean isBandTrue = candles.get(0).getTradePrice() <= lowerBandNear && candles.get(0).getTradePrice() >= lowerBand;
-
-            double currentTradePrice = ((UpbitCandleResponse) candles.get(0)).getTradePrice();
-            boolean isPriceDown = currentTradePrice <= ((UpbitCandleResponse) candles.get(1)).getTradePrice() * 0.95;
+            UpbitCandleResponse upbitCandleResponse = objectMapper.convertValue(candles.get(0), UpbitCandleResponse.class);
+            double currentTradePrice = upbitCandleResponse.getTradePrice();
+            upbitCandleResponse = objectMapper.convertValue(candles.get(1), UpbitCandleResponse.class);
+            boolean isPriceDown = currentTradePrice <= upbitCandleResponse.getTradePrice() * 0.95;
             boolean isBandTrue = currentTradePrice <= bollingerBand[1] && currentTradePrice < bollingerBand[0];
             MATrendDirection goldenCross = technicalIndicator.isGoldenCross(candles);
 

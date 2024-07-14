@@ -2,6 +2,7 @@ package com.trader.coin.crypto.infrastructure.jwt;
 
 import com.auth0.jwt.JWT;
 import com.auth0.jwt.algorithms.Algorithm;
+import com.trader.coin.common.domain.Market;
 import com.trader.coin.common.infrastructure.config.APIProperties;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
@@ -15,7 +16,7 @@ public class JwtTokenUtil {
     public String getAuthenticationToken(APIProperties api) {
         String accessKey;
         String secretKey;
-        if (api.getCrypto_market().equals("upbit")) {
+        if (api.getCrypto_market().equals(Market.UPBIT)) {
             accessKey = api.getUpbit().getAccessKey();
             secretKey = api.getUpbit().getSecretKey();
         } else {
@@ -34,7 +35,7 @@ public class JwtTokenUtil {
     public String getAuthenticationToken(APIProperties apiProperties, String queryHash) {
         String accessKey;
         String secretKey;
-        if (apiProperties.getCrypto_market().equals("upbit")) {
+        if (apiProperties.getCrypto_market().equals(Market.UPBIT)) {
             accessKey = apiProperties.getUpbit().getAccessKey();
             secretKey = apiProperties.getUpbit().getSecretKey();
         } else {

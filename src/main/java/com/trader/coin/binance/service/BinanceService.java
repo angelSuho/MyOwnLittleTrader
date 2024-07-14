@@ -129,21 +129,22 @@ public class BinanceService {
             // 볼린저 밴드 하단 범위 설정. 하단 돌파부터 근접
 //            double lowerBand = bollingerBand[1];
 //            double lowerBandNear = lowerBand * 1.05; // 볼린저 밴드 하단의 5% 위
-//            boolean isBandTrue = candles.get(0).getTradePrice() <= lowerBandNear && candles.get(0).getTradePrice() >= lowerBand;
+//            boolean isBandDown = candles.get(0).getTradePrice() <= lowerBandNear && candles.get(0).getTradePrice() >= lowerBand;
 
             double currentTradePrice = ((BinanceCandleResponse) candles.get(0)).getClosePrice();
             boolean isPriceDown = currentTradePrice <= ((BinanceCandleResponse) candles.get(1)).getClosePrice() * 0.95;
-            boolean isBandTrue = currentTradePrice <= bollingerBand[1] && currentTradePrice < bollingerBand[0];
+            boolean isBandDown = currentTradePrice <= bollingerBand[1] && currentTradePrice <= bollingerBand[0];
+            boolean isBandUp = currentTradePrice >= bollingerBand[2];
             MATrendDirection goldenCross = technicalIndicator.isGoldenCross(candles);
 
-            if ((rsi < api.getRSI_BUYING_CONDITION() && isBandTrue && !isPriceDown) ||
-                    (goldenCross == GOLDEN_CROSS && !(rsi > api.getRSI_SELLING_CONDITION()))) {
+            if ((rsi < api.getRSI_BUYING_CONDITION() && isBandDown && !isPriceDown) ||
+                    (goldenCross == GOLDEN_CROSS && !(rsi > api.getRSI_BUYING_CONDITION()))) {
                 log.info("롱 매수 조건 만족: {}, RSI: {}, 볼린저 밴드: {}, 현재가: {}", market, rsi, bollingerBand, currentTradePrice);
                 evaluations.add(new CoinEvaluation(market, rsi, currentTradePrice, bollingerBand));
             }
 
             // calculate short position
-            if (goldenCross == DEATH_CROSS && rsi  > api.getRSI_BUYING_CONDITION()) {
+            if (goldenCross == DEATH_CROSS && rsi  > api.getRSI_SELLING_CONDITION() && isBandUp) {
                 log.info("숏 매수 조건 만족: {}, RSI: {}, 볼린저 밴드: {}, 현재가: {}", market, rsi, bollingerBand, currentTradePrice);
                 evaluations.add(new CoinEvaluation(market, rsi, currentTradePrice, bollingerBand));
             }
