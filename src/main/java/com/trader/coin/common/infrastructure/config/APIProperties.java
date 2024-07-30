@@ -29,7 +29,7 @@ public class APIProperties {
 
     private final boolean isFutures = false;
     private final Market crypto_market = Market.UPBIT;
-    private final String upbit_UNIT = "240";  // days or minutes(1, 3, 5, 15, 30, 60, 240)
+    private final String upbit_UNIT = "days";  // days or minutes(1, 3, 5, 15, 30, 60, 240)
     private final String binance_INTERVAL = "1h";  // 15m, 30m, 1h, 4h, 1d
     private final int PERIOD = 20;
     private final double BID_PERCENTAGE = 0.25;

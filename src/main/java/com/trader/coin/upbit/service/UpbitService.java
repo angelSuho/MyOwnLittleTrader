@@ -87,6 +87,7 @@ public class UpbitService {
                 .retrieve()
                 .bodyToMono(String.class)
                 .block();
+        delayMethod(500);
 
         List<? extends CandleData> responses;
         if (api.getCrypto_market().equals(Market.BINANCE)) {
